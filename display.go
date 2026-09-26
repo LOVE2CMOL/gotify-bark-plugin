@@ -123,13 +123,15 @@ encrypt_iv: ""
 group_by_app: true
 # 上面为 false 或应用名为空时，统一使用的分组名
 default_group: ""
-# 中断级别：active（默认）/ timeSensitive / passive / critical / 留空
+# 中断级别：auto = 跟随 Gotify 优先级自动判断（推荐）
+#   priority <1 -> passive，1-3 -> active，4-7 -> timeSensitive，>7 -> critical
+# 也可固定为 active（默认）/ timeSensitive / passive / critical / 留空
 level: %q
 # 铃声名，例如 alarm、minuet；留空用 Bark 默认
 sound: ""
-# 通知图标 URL（iOS 15+）
+# 通知图标 URL（iOS 15+）；填 auto = 直接用 Gotify 里给该应用设置的图标
 icon: ""
-# "1" = 响铃持续 30 秒（重要告警用）
+# "1" = 允许响铃 30 秒；注意只有 Gotify 优先级 ≥ 9 时才会真正触发
 call: ""
 # 角标数字，-1 = 不改动
 badge: -1

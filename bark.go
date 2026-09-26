@@ -30,6 +30,39 @@ const (
 // encryptModes lists the accepted encrypt_mode values.
 var encryptModes = map[string]bool{encryptModeCBC: true, encryptModeECB: true}
 
+// levelAuto derives the interruption level from the Gotify priority, and
+// iconAuto reuses the icon configured on the Gotify application.
+const (
+	levelAuto = "auto"
+	iconAuto  = "auto"
+)
+
+// callMinPriority is the lowest Gotify priority that still triggers Bark's
+// `call` flag. `call` keeps the phone ringing for 30 seconds, which is only
+// tolerable for genuinely urgent messages.
+const callMinPriority = 9
+
+// barkLevelForPriority maps a Gotify priority onto Bark's interruption level.
+//
+// The thresholds follow the mapping that works well with the Bark iOS app:
+//
+//	< 1   -> passive        (silent, only shows in the notification centre)
+//	1-3   -> active         (normal notification)
+//	4-7   -> timeSensitive  (breaks through Focus modes)
+//	> 7   -> critical       (breaks through the mute switch, needs app consent)
+func barkLevelForPriority(priority int) string {
+	switch {
+	case priority < 1:
+		return "passive"
+	case priority <= 3:
+		return "active"
+	case priority <= 7:
+		return "timeSensitive"
+	default:
+		return "critical"
+	}
+}
+
 // gotifyMessage mirrors the payload Gotify pushes over its WebSocket stream
 // (model.MessageExternal).
 type gotifyMessage struct {

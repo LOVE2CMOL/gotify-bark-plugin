@@ -71,32 +71,40 @@ func httpBaseURL(baseURL string) (string, error) {
 	return strings.TrimRight(u.String(), "/"), nil
 }
 
-// appNameCache resolves Gotify application ids to application names so that the
-// Bark group (and the {appname} template placeholder) can use a readable name.
-type appNameCache struct {
+// applicationInfo is what the plugin needs to know about a Gotify application:
+// the name used as the Bark group, and the icon the user picked for it.
+type applicationInfo struct {
+	Name  string
+	Image string
+}
+
+// appCache resolves Gotify application ids to their metadata so that the Bark
+// group, the {appname} template placeholder and the "auto" icon can use what
+// the user configured in Gotify.
+type appCache struct {
 	mu      sync.Mutex
-	names   map[uint]string
+	apps    map[uint]applicationInfo
 	fetched time.Time
 }
 
-func (c *appNameCache) get(ctx context.Context, client *http.Client, baseURL, token string, appID uint) string {
+func (c *appCache) get(ctx context.Context, client *http.Client, baseURL, token string, appID uint) applicationInfo {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.names == nil || time.Since(c.fetched) > appCacheTTL {
-		if names, err := fetchApplicationNames(ctx, client, baseURL, token); err != nil {
+	if c.apps == nil || time.Since(c.fetched) > appCacheTTL {
+		if apps, err := fetchApplications(ctx, client, baseURL, token); err != nil {
 			log.Printf("[bark] cannot list gotify applications (falling back to app ids): %v", err)
-			if c.names == nil {
-				c.names = map[uint]string{}
+			if c.apps == nil {
+				c.apps = map[uint]applicationInfo{}
 			}
 		} else {
-			c.names = names
+			c.apps = apps
 		}
 		c.fetched = time.Now()
 	}
-	return c.names[appID]
+	return c.apps[appID]
 }
 
-func fetchApplicationNames(ctx context.Context, client *http.Client, baseURL, token string) (map[uint]string, error) {
+func fetchApplications(ctx context.Context, client *http.Client, baseURL, token string) (map[uint]applicationInfo, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/application", nil)
 	if err != nil {
 		return nil, err
@@ -117,17 +125,38 @@ func fetchApplicationNames(ctx context.Context, client *http.Client, baseURL, to
 		return nil, fmt.Errorf("GET /application returned HTTP %d: %s", resp.StatusCode, truncate(strings.TrimSpace(string(body)), 200))
 	}
 	var apps []struct {
-		ID   uint   `json:"id"`
-		Name string `json:"name"`
+		ID    uint   `json:"id"`
+		Name  string `json:"name"`
+		Image string `json:"image"`
 	}
 	if err := json.Unmarshal(body, &apps); err != nil {
 		return nil, err
 	}
-	names := make(map[uint]string, len(apps))
+	out := make(map[uint]applicationInfo, len(apps))
 	for _, a := range apps {
-		names[a.ID] = a.Name
+		out[a.ID] = applicationInfo{Name: a.Name, Image: a.Image}
 	}
-	return names, nil
+	return out, nil
+}
+
+// resolveAppIcon turns the image configured on a Gotify application into an
+// absolute URL the iPhone can fetch.
+//
+// Gotify stores most icons as a server-relative path ("static/defaultapp.png")
+// but lets users paste a full URL as well, so both have to be handled.
+func resolveAppIcon(baseURL, image string) string {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return ""
+	}
+	if strings.HasPrefix(image, "http://") || strings.HasPrefix(image, "https://") {
+		return image
+	}
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return ""
+	}
+	return baseURL + "/" + strings.TrimLeft(image, "/")
 }
 
 // streamSubscriber keeps a WebSocket connection to the Gotify stream endpoint

@@ -37,10 +37,10 @@ Gotify 本身没有「收到消息」的插件钩子，所以本插件换了个�
 
 ```bash
 # x86_64 服务器 / NAS / 云主机
-curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.1.1/bark-linux-amd64.so
+curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.2.0/bark-linux-amd64.so
 
 # ARM64（树莓派 4/5、甲骨文 ARM、Apple Silicon 上的 Linux 虚拟机）
-curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.1.1/bark-linux-arm64.so
+curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.2.0/bark-linux-arm64.so
 ```
 
 也可以在包管理页面浏览下载：<https://gitea.example.com/dsh/-/packages>
@@ -127,13 +127,14 @@ encrypt_iv: ""
 group_by_app: true
 # 应用名为空时使用的兜底分组名
 default_group: ""
-# 中断级别：active（默认）/ timeSensitive / passive / critical，留空用 Bark 默认
-level: "active"
+# 中断级别：auto = 跟随 Gotify 优先级自动判断（推荐，见下方说明）
+# 也可固定为 active（默认）/ timeSensitive / passive / critical，留空用 Bark 默认
+level: "auto"
 # 铃声名，如 alarm、minuet、multiwayinvitation，留空用系统默认
 sound: ""
-# 通知图标 URL（iOS 15+）
+# 通知图标 URL（iOS 15+）；填 auto = 直接使用 Gotify 里给该应用设置的图标
 icon: ""
-# "1" = 响铃持续 30 秒
+# "1" = 允许响铃 30 秒；只有 Gotify 优先级 ≥ 9 时才会真正触发
 call: ""
 # "1" = 自动把正文复制到剪贴板
 auto_copy: ""
@@ -173,6 +174,31 @@ dry_run: false
 - **一眼看出是哪台机器**：`group_by_app` 开着，Bark 里就会按 Gotify 应用名分组。
 - **点击通知直达 Gotify 消息页**：内置占位符只有 `{appid}` `{appname}` `{title}` `{message}` `{priority}` `{messageid}`，所以地址要写全，例如
   `url_template: "http://192.168.1.10:8080/#/messages"`。
+
+### 优先级怎么变成中断级别（`level: auto`）
+
+Bark 只有 4 档中断级别，而 Gotify 用的是 0-10 的优先级。填 `level: auto` 就会自动换算，不用一刀切：
+
+| Gotify 优先级 | Bark 中断级别 | 手机上的表现 |
+| --- | --- | --- |
+| < 1（含 0 和负数） | `passive` | 静默，只进通知中心，不亮屏不响 |
+| 1 ~ 3 | `active` | 普通通知，正常提示音 |
+| 4 ~ 7 | `timeSensitive` | 可穿透「专注模式」 |
+| > 7（8、9、10） | `critical` | 可穿透静音开关，最强提醒 |
+
+于是日常消息安安静静地来，真正紧急的（priority 8 以上）才会强势提醒。
+
+> `critical` 需要在 Bark App 里单独开启权限，否则 iOS 会忽略该级别。
+> 如果不想自动换算，把 `level` 写成 `active` / `timeSensitive` / `passive` / `critical` 里的任意一个即可固定。
+
+### 两个 `auto` / 高优先级的贴心设计
+
+- **`icon: auto`** —— Bark 通知左侧的图标直接使用你在 Gotify 里给该应用设置的那个图标（应用没单独设置则用 Gotify 默认图标）。
+  注意：图标是 iPhone 自己去拉的，所以如果 Gotify 是内网地址，手机得能访问到它。
+  插件会缓存应用信息 5 分钟，所以刚在 Gotify 里改完图标，最多 5 分钟后才会反映到推送里。
+- **`call` 只在优先级 ≥ 9 时触发** —— `call: "1"` 并不会让所有通知都响 30 秒，
+  只有 Gotify 优先级 **≥ 9** 的消息才会真正触发持续响铃，其余照常安静推送。
+  所以可以放心全局打开 `call`，不用担心一条普通消息把手机响炸。
 
 ---
 

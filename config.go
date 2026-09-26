@@ -108,7 +108,7 @@ func (p *Plugin) DefaultConfig() interface{} {
 
 var (
 	soundPattern = regexp.MustCompile(`^[A-Za-z0-9_.\-]+$`)
-	levelValues  = map[string]bool{"": true, "active": true, "timeSensitive": true, "passive": true, "critical": true}
+	levelValues  = map[string]bool{"": true, levelAuto: true, "active": true, "timeSensitive": true, "passive": true, "critical": true}
 	actionValues = map[string]bool{"": true, "none": true}
 )
 
@@ -216,8 +216,11 @@ func normalizeConfig(cfg *Config) (*Config, error) {
 
 	// --- enum-ish options ------------------------------------------------
 	out.Level = strings.TrimSpace(out.Level)
+	if strings.EqualFold(out.Level, levelAuto) {
+		out.Level = levelAuto
+	}
 	if !levelValues[out.Level] {
-		return nil, fmt.Errorf("level must be one of active, timeSensitive, passive, critical (or empty), got %q", cfg.Level)
+		return nil, fmt.Errorf("level must be one of auto, active, timeSensitive, passive, critical (or empty), got %q", cfg.Level)
 	}
 	out.Action = strings.TrimSpace(out.Action)
 	if !actionValues[out.Action] {
@@ -262,9 +265,15 @@ func normalizeConfig(cfg *Config) (*Config, error) {
 	out.DefaultGroup = strings.TrimSpace(out.DefaultGroup)
 	out.SkipTitlePrefix = strings.TrimSpace(out.SkipTitlePrefix)
 	out.Icon = strings.TrimSpace(out.Icon)
-	if out.Icon != "" {
+	switch {
+	case out.Icon == "":
+		// no icon
+	case strings.EqualFold(out.Icon, iconAuto):
+		// Reuse whatever icon the Gotify application is configured with.
+		out.Icon = iconAuto
+	default:
 		if iu, err := url.Parse(out.Icon); err != nil || iu.Scheme == "" || iu.Host == "" {
-			return nil, fmt.Errorf("icon %q is not a valid absolute URL", cfg.Icon)
+			return nil, fmt.Errorf("icon %q must be an absolute URL or %q", cfg.Icon, iconAuto)
 		}
 	}
 

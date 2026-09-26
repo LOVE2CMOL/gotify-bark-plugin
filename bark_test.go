@@ -130,3 +130,123 @@ func TestBuildBarkRequestRouting(t *testing.T) {
 		t.Errorf("encrypted body must carry ciphertext and iv: %s", enc.body)
 	}
 }
+
+func intPtr(v int) *int { return &v }
+
+// TestBarkLevelForPriority pins the auto level mapping agreed for the Bark app.
+func TestBarkLevelForPriority(t *testing.T) {
+	cases := []struct {
+		priority int
+		want     string
+	}{
+		{-2, "passive"}, {-1, "passive"}, {0, "passive"},
+		{1, "active"}, {2, "active"}, {3, "active"},
+		{4, "timeSensitive"}, {5, "timeSensitive"}, {6, "timeSensitive"}, {7, "timeSensitive"},
+		{8, "critical"}, {9, "critical"}, {10, "critical"},
+	}
+	for _, c := range cases {
+		if got := barkLevelForPriority(c.priority); got != c.want {
+			t.Errorf("barkLevelForPriority(%d) = %q, want %q", c.priority, got, c.want)
+		}
+	}
+}
+
+func TestBuildBarkPushAutoLevel(t *testing.T) {
+	cfg := &Config{Level: levelAuto, DeviceKeys: "k"}
+	for _, c := range []struct {
+		priority int
+		want     string
+	}{{0, "passive"}, {2, "active"}, {6, "timeSensitive"}, {9, "critical"}} {
+		msg := gotifyMessage{Priority: intPtr(c.priority)}
+		if got := buildBarkPush(cfg, msg, "k", applicationInfo{}, "").Level; got != c.want {
+			t.Errorf("priority %d -> level %q, want %q", c.priority, got, c.want)
+		}
+	}
+
+	// A fixed level must still win over the priority.
+	fixed := &Config{Level: "passive"}
+	if got := buildBarkPush(fixed, gotifyMessage{Priority: intPtr(9)}, "k", applicationInfo{}, "").Level; got != "passive" {
+		t.Errorf("fixed level was overridden: got %q", got)
+	}
+}
+
+// TestBuildBarkPushCallRequiresHighPriority covers the rule that `call` only
+// fires for Gotify priority >= 9, never for ordinary messages.
+func TestBuildBarkPushCallRequiresHighPriority(t *testing.T) {
+	cfg := &Config{Call: "1"}
+	for _, c := range []struct {
+		priority int
+		want     string
+	}{{-2, ""}, {0, ""}, {5, ""}, {8, ""}, {9, "1"}, {10, "1"}} {
+		msg := gotifyMessage{Priority: intPtr(c.priority)}
+		if got := buildBarkPush(cfg, msg, "k", applicationInfo{}, "").Call; got != c.want {
+			t.Errorf("priority %d -> call %q, want %q", c.priority, got, c.want)
+		}
+	}
+
+	// call disabled stays disabled no matter the priority.
+	off := &Config{}
+	if got := buildBarkPush(off, gotifyMessage{Priority: intPtr(10)}, "k", applicationInfo{}, "").Call; got != "" {
+		t.Errorf("call must stay empty when not configured, got %q", got)
+	}
+}
+
+func TestBuildBarkPushAutoIcon(t *testing.T) {
+	cfg := &Config{Icon: iconAuto}
+	app := applicationInfo{Name: "testapp", Image: "static/defaultapp.png"}
+	got := buildBarkPush(cfg, gotifyMessage{}, "k", app, "http://gotify:80").Icon
+	if want := "http://gotify:80/static/defaultapp.png"; got != want {
+		t.Errorf("auto icon = %q, want %q", got, want)
+	}
+
+	// An application without an icon must not produce one.
+	got = buildBarkPush(cfg, gotifyMessage{}, "k", applicationInfo{}, "http://gotify:80").Icon
+	if got != "" {
+		t.Errorf("auto icon without application image = %q, want empty", got)
+	}
+
+	// An explicit icon still wins.
+	explicit := &Config{Icon: "https://cdn.example/x.png"}
+	if got := buildBarkPush(explicit, gotifyMessage{}, "k", app, "http://gotify:80").Icon; got != "https://cdn.example/x.png" {
+		t.Errorf("explicit icon was overridden: %q", got)
+	}
+}
+
+func TestResolveAppIcon(t *testing.T) {
+	cases := []struct {
+		base, image, want string
+	}{
+		{"http://gotify:80", "static/defaultapp.png", "http://gotify:80/static/defaultapp.png"},
+		{"http://gotify:80/", "/static/defaultapp.png", "http://gotify:80/static/defaultapp.png"},
+		{"https://push.example/gotify", "static/a.png", "https://push.example/gotify/static/a.png"},
+		{"http://gotify:80", "https://cdn.example/i.png", "https://cdn.example/i.png"},
+		{"http://gotify:80", "http://cdn.example/i.png", "http://cdn.example/i.png"},
+		{"http://gotify:80", "", ""},
+		{"http://gotify:80", "   ", ""},
+		{"", "static/a.png", ""},
+	}
+	for _, c := range cases {
+		if got := resolveAppIcon(c.base, c.image); got != c.want {
+			t.Errorf("resolveAppIcon(%q, %q) = %q, want %q", c.base, c.image, got, c.want)
+		}
+	}
+}
+
+// TestBuildBarkPushUsesApplicationNameForGroup checks the group keeps working
+// now that it is fed by applicationInfo instead of a bare string.
+func TestBuildBarkPushUsesApplicationNameForGroup(t *testing.T) {
+	cfg := &Config{GroupByApp: true, URLTemplate: "https://x.example/{appname}/{messageid}"}
+	app := applicationInfo{Name: "my app"}
+	push := buildBarkPush(cfg, gotifyMessage{ID: 42}, "k", app, "")
+	if push.Group != "my app" {
+		t.Errorf("group = %q, want %q", push.Group, "my app")
+	}
+	if want := "https://x.example/my%20app/42"; push.URL != want {
+		t.Errorf("url = %q, want %q", push.URL, want)
+	}
+
+	fallback := &Config{GroupByApp: true, DefaultGroup: "gotify"}
+	if got := buildBarkPush(fallback, gotifyMessage{}, "k", applicationInfo{}, "").Group; got != "gotify" {
+		t.Errorf("default group fallback = %q, want %q", got, "gotify")
+	}
+}

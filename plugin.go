@@ -33,7 +33,7 @@ type Plugin struct {
 	config    *Config
 	location  *url.URL
 	http      *http.Client
-	appCache  *appNameCache
+	appCache  *appCache
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
 	started   bool
@@ -44,7 +44,7 @@ type Plugin struct {
 func newPlugin(ctx plugin.UserContext) *Plugin {
 	return &Plugin{
 		userCtx:   ctx,
-		appCache:  &appNameCache{},
+		appCache:  &appCache{},
 		statusMsg: "尚未启用",
 	}
 }
@@ -302,15 +302,21 @@ func (p *Plugin) forward(ctx context.Context, msg gotifyMessage) {
 		return
 	}
 
-	appName := ""
-	if cfg.GroupByApp || strings.Contains(cfg.URLTemplate, "{appname}") {
+	// Application metadata is only fetched when something actually needs it:
+	// the Bark group, an {appname} placeholder, or the "auto" icon.
+	app := applicationInfo{}
+	gotifyBase := ""
+	if cfg.GroupByApp || cfg.Icon == iconAuto ||
+		strings.Contains(cfg.URLTemplate, "{appname}") ||
+		strings.Contains(cfg.CopyTemplate, "{appname}") {
 		if base, err := httpBaseURL(p.baseURL(cfg, p.currentLocation())); err == nil {
-			appName = cache.get(ctx, client, base, cfg.ClientToken, msg.ApplicationID)
+			gotifyBase = base
+			app = cache.get(ctx, client, base, cfg.ClientToken, msg.ApplicationID)
 		}
 	}
 
 	for _, key := range splitKeys(cfg.DeviceKeys) {
-		push := buildBarkPush(cfg, msg, key, appName)
+		push := buildBarkPush(cfg, msg, key, app, gotifyBase)
 		if cfg.DryRun {
 			if cfg.EncryptKey != "" {
 				log.Printf("[bark] dry-run: would push to device %s (encrypted, mode=%s): %+v", key, cfg.EncryptMode, push)
@@ -353,7 +359,7 @@ func (p *Plugin) shouldForward(cfg *Config, msg gotifyMessage) bool {
 }
 
 // buildBarkPush maps one Gotify message onto a Bark push request.
-func buildBarkPush(cfg *Config, msg gotifyMessage, deviceKey, appName string) barkPush {
+func buildBarkPush(cfg *Config, msg gotifyMessage, deviceKey string, app applicationInfo, gotifyBase string) barkPush {
 	body := msg.Message
 	if cfg.IncludeExtras && len(msg.Extras) > 0 {
 		if extras, err := json.Marshal(msg.Extras); err == nil {
@@ -361,18 +367,35 @@ func buildBarkPush(cfg *Config, msg gotifyMessage, deviceKey, appName string) ba
 		}
 	}
 
+	level := cfg.Level
+	if level == levelAuto {
+		level = barkLevelForPriority(msg.priority())
+	}
+
+	icon := cfg.Icon
+	if icon == iconAuto {
+		icon = resolveAppIcon(gotifyBase, app.Image)
+	}
+
 	push := barkPush{
 		Body:      body,
 		DeviceKey: deviceKey,
 		Title:     msg.Title,
-		Level:     cfg.Level,
+		Level:     level,
 		Sound:     cfg.Sound,
-		Icon:      cfg.Icon,
-		Call:      cfg.Call,
+		Icon:      icon,
 		AutoCopy:  cfg.AutoCopy,
 		Action:    cfg.Action,
 		IsArchive: cfg.Archive,
 		TTL:       cfg.TTL,
+	}
+
+	// Bark's `call` keeps the phone ringing for 30 seconds. Only genuinely
+	// urgent messages may do that, otherwise a single chatty application could
+	// make the phone unusable — so it requires Gotify priority >= 9 even when
+	// call is enabled in the configuration.
+	if cfg.Call != "" && msg.priority() >= callMinPriority {
+		push.Call = cfg.Call
 	}
 
 	if cfg.Badge >= 0 {
@@ -384,18 +407,18 @@ func buildBarkPush(cfg *Config, msg gotifyMessage, deviceKey, appName string) ba
 	}
 
 	switch {
-	case cfg.GroupByApp && appName != "":
-		push.Group = appName
+	case cfg.GroupByApp && app.Name != "":
+		push.Group = app.Name
 	case cfg.DefaultGroup != "":
 		push.Group = cfg.DefaultGroup
 	}
 
 	if cfg.URLTemplate != "" {
-		push.URL = expandTemplate(cfg.URLTemplate, msg, appName, true)
+		push.URL = expandTemplate(cfg.URLTemplate, msg, app.Name, true)
 	}
 	switch {
 	case cfg.CopyTemplate != "":
-		push.Copy = expandTemplate(cfg.CopyTemplate, msg, appName, false)
+		push.Copy = expandTemplate(cfg.CopyTemplate, msg, app.Name, false)
 	case push.AutoCopy == "1":
 		push.Copy = body
 	}
@@ -414,8 +437,12 @@ func expandTemplate(tpl string, msg gotifyMessage, appName string, escape bool) 
 		"{messageid}": fmt.Sprintf("%d", msg.ID),
 	}
 	if escape {
+		// PathEscape, not QueryEscape: a placeholder usually lands in the path
+		// (".../{appname}/{messageid}"), where QueryEscape's "+" would stay a
+		// literal plus instead of a space. PathEscape is also valid inside a
+		// query string, so one encoding covers both positions.
 		for k, v := range values {
-			values[k] = url.QueryEscape(v)
+			values[k] = url.PathEscape(v)
 		}
 	}
 	// Deterministic order keeps the replacement independent of map iteration.
