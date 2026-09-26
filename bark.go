@@ -3,13 +3,32 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
+
+// Bark end-to-end encryption parameters. The key must be 32 characters
+// (AES-256) and the IV 16 characters, exactly as configured in the Bark app.
+// See https://bark.day.app/#/encryption
+const (
+	encryptKeyLen  = 32
+	encryptIVLen   = 16
+	encryptModeCBC = "cbc"
+	encryptModeECB = "ecb"
+)
+
+// encryptModes lists the accepted encrypt_mode values.
+var encryptModes = map[string]bool{encryptModeCBC: true, encryptModeECB: true}
 
 // gotifyMessage mirrors the payload Gotify pushes over its WebSocket stream
 // (model.MessageExternal).
@@ -25,9 +44,12 @@ type gotifyMessage struct {
 
 // barkPush is the body of POST /push on a bark-server (API v2).
 // See https://github.com/Finb/bark-server/blob/master/docs/API_V2.md
+//
+// In encrypted mode the payload is sent as the AES ciphertext instead and the
+// device key travels in the URL, so DeviceKey is omitted there.
 type barkPush struct {
 	Body      string `json:"body"`
-	DeviceKey string `json:"device_key"`
+	DeviceKey string `json:"device_key,omitempty"`
 	Title     string `json:"title,omitempty"`
 	Subtitle  string `json:"subtitle,omitempty"`
 	Level     string `json:"level,omitempty"`
@@ -100,16 +122,107 @@ func newHTTPClient(timeout time.Duration) *http.Client {
 	}
 }
 
+// barkRequest is a fully prepared HTTP call to a bark-server.
+type barkRequest struct {
+	endpoint    string
+	contentType string
+	body        []byte
+}
+
+// buildBarkRequest turns a push into the HTTP call to perform: a plaintext
+// POST /push, or, when a key is configured, an encrypted POST /{device_key}
+// carrying `ciphertext` (plus `iv` in CBC mode).
+func buildBarkRequest(cfg *Config, deviceKey string, push barkPush) (*barkRequest, error) {
+	base := strings.TrimRight(cfg.ServerURL, "/")
+
+	if cfg.EncryptKey == "" {
+		push.DeviceKey = deviceKey
+		payload, err := json.Marshal(push)
+		if err != nil {
+			return nil, fmt.Errorf("encode bark payload: %w", err)
+		}
+		return &barkRequest{
+			endpoint:    base + "/push",
+			contentType: "application/json; charset=utf-8",
+			body:        payload,
+		}, nil
+	}
+
+	// Encrypted mode: the device key selects the target through the URL and
+	// the payload stays opaque to the server.
+	push.DeviceKey = ""
+	plain, err := json.Marshal(push)
+	if err != nil {
+		return nil, fmt.Errorf("encode bark payload: %w", err)
+	}
+	ciphertext, iv, err := encryptBarkPayload(cfg.EncryptKey, cfg.EncryptMode, cfg.EncryptIV, plain)
+	if err != nil {
+		return nil, err
+	}
+	form := url.Values{}
+	form.Set("ciphertext", ciphertext)
+	if iv != "" {
+		form.Set("iv", iv)
+	}
+	return &barkRequest{
+		endpoint:    base + "/" + url.PathEscape(deviceKey),
+		contentType: "application/x-www-form-urlencoded",
+		body:        []byte(form.Encode()),
+	}, nil
+}
+
+// encryptBarkPayload seals plaintext with AES-256 in the configured mode and
+// returns the base64 ciphertext together with the IV to transmit ("" for ECB).
+//
+// Bark takes the key and the IV as raw 16/32 characters. Its shell example
+// hex-encodes them only because `openssl enc -K/-iv` demands hex input, so the
+// IV that travels on the wire is the plain 16-character string.
+func encryptBarkPayload(key, mode, fixedIV string, plaintext []byte) (string, string, error) {
+	block, err := aes.NewCipher([]byte(key))
+	if err != nil {
+		return "", "", fmt.Errorf("initialise cipher: %w", err)
+	}
+	padded := pkcs7Pad(plaintext, block.BlockSize())
+
+	if mode == encryptModeECB {
+		out := make([]byte, len(padded))
+		for i := 0; i < len(padded); i += block.BlockSize() {
+			block.Encrypt(out[i:i+block.BlockSize()], padded[i:i+block.BlockSize()])
+		}
+		return base64.StdEncoding.EncodeToString(out), "", nil
+	}
+
+	iv := fixedIV
+	if iv == "" {
+		// A fresh IV per push keeps identical messages from producing
+		// identical ciphertexts. Hex keeps it printable and 16 characters
+		// long, matching Bark's own tooling.
+		raw := make([]byte, encryptIVLen/2)
+		if _, err := rand.Read(raw); err != nil {
+			return "", "", fmt.Errorf("generate iv: %w", err)
+		}
+		iv = hex.EncodeToString(raw)
+	}
+	out := make([]byte, len(padded))
+	cipher.NewCBCEncrypter(block, []byte(iv)).CryptBlocks(out, padded)
+	return base64.StdEncoding.EncodeToString(out), iv, nil
+}
+
+// pkcs7Pad appends PKCS#7 padding, the scheme `openssl enc` applies by default.
+func pkcs7Pad(data []byte, blockSize int) []byte {
+	n := blockSize - len(data)%blockSize
+	return append(append([]byte(nil), data...), bytes.Repeat([]byte{byte(n)}, n)...)
+}
+
 // sendBarkPush posts one push to the bark server. It retries transient
 // failures with a small backoff so a short bark-server restart does not lose
 // notifications.
-func sendBarkPush(ctx context.Context, client *http.Client, serverURL string, push barkPush) error {
-	payload, err := json.Marshal(push)
+func sendBarkPush(ctx context.Context, client *http.Client, cfg *Config, deviceKey string, push barkPush) error {
+	call, err := buildBarkRequest(cfg, deviceKey, push)
 	if err != nil {
-		return fmt.Errorf("encode bark payload: %w", err)
+		return err
 	}
 
-	endpoint := strings.TrimRight(serverURL, "/") + "/push"
 	const attempts = 3
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
@@ -120,7 +233,7 @@ func sendBarkPush(ctx context.Context, client *http.Client, serverURL string, pu
 			case <-time.After(time.Duration(attempt-1) * 500 * time.Millisecond):
 			}
 		}
-		lastErr = postBarkPush(ctx, client, endpoint, payload)
+		lastErr = postBarkRequest(ctx, client, call)
 		if lastErr == nil {
 			return nil
 		}
@@ -131,12 +244,12 @@ func sendBarkPush(ctx context.Context, client *http.Client, serverURL string, pu
 	return lastErr
 }
 
-func postBarkPush(ctx context.Context, client *http.Client, endpoint string, payload []byte) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+func postBarkRequest(ctx context.Context, client *http.Client, call *barkRequest) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, call.endpoint, bytes.NewReader(call.body))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("Content-Type", call.contentType)
 	req.Header.Set("User-Agent", "gotify-bark-plugin/"+Version)
 
 	resp, err := client.Do(req)

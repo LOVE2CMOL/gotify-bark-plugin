@@ -13,7 +13,7 @@ import (
 )
 
 // Version is the plugin version reported to Gotify.
-const Version = "1.0.0"
+const Version = "1.1.0"
 
 // ModulePath identifies this plugin. Gotify refuses plugins with an empty path.
 const ModulePath = "github.com/dsh/gotify-bark-plugin"
@@ -25,7 +25,7 @@ func GetGotifyPluginInfo() plugin.Info {
 		Author:      "DSH",
 		Name:        "Bark Forwarder",
 		Website:     "https://github.com/Finb/Bark",
-		Description: "把 Gotify 收到的每条通知实时镜像推送到 Bark（iOS），支持自建 bark-server、优先级过滤、铃声/分组/图标等完整 Bark 参数。",
+		Description: "把 Gotify 收到的每条通知实时镜像推送到 Bark（iOS），支持自建 bark-server、端到端加密、优先级过滤、铃声/分组/图标等完整 Bark 参数。",
 		License:     "MIT",
 		ModulePath:  ModulePath,
 	}

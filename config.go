@@ -33,6 +33,20 @@ type Config struct {
 	// ServerURL is the bark-server base URL, e.g. https://api.day.app or
 	// http://192.168.1.10:8080.
 	ServerURL string `yaml:"server_url"`
+
+	// --- 端到端加密（Bark App 里的「加密」开关）--------------------------
+	// EncryptKey enables Bark's end-to-end encryption (AES-256). It must be
+	// exactly 32 characters and identical to the key configured in the Bark
+	// app. Empty means plaintext pushes. See https://bark.day.app/#/encryption
+	EncryptKey string `yaml:"encrypt_key"`
+	// EncryptMode selects the cipher mode: "cbc" (default, one IV per push) or
+	// "ecb" (no IV).
+	EncryptMode string `yaml:"encrypt_mode"`
+	// EncryptIV pins the CBC initialisation vector (16 characters). Bark's own
+	// tooling generates a random IV for every message, which is what happens
+	// when this is left empty; set it only to reproduce a fixed ciphertext.
+	EncryptIV string `yaml:"encrypt_iv"`
+
 	// DefaultGroup is applied when the Gotify application name is empty.
 	DefaultGroup string `yaml:"default_group"`
 	// GroupByApp uses the Gotify application name as the Bark group.
@@ -173,6 +187,32 @@ func normalizeConfig(cfg *Config) (*Config, error) {
 	}
 	su.RawQuery, su.Fragment = "", ""
 	out.ServerURL = strings.TrimRight(su.String(), "/")
+
+	// --- end-to-end encryption -------------------------------------------
+	out.EncryptKey = strings.TrimSpace(out.EncryptKey)
+	out.EncryptMode = strings.ToLower(strings.TrimSpace(out.EncryptMode))
+	out.EncryptIV = strings.TrimSpace(out.EncryptIV)
+	if out.EncryptKey != "" {
+		if len(out.EncryptKey) != encryptKeyLen {
+			return nil, fmt.Errorf("encrypt_key must be exactly %d characters, got %d", encryptKeyLen, len(out.EncryptKey))
+		}
+		if out.EncryptMode == "" {
+			out.EncryptMode = encryptModeCBC
+		}
+		if !encryptModes[out.EncryptMode] {
+			return nil, fmt.Errorf("encrypt_mode must be %q or %q, got %q", encryptModeCBC, encryptModeECB, cfg.EncryptMode)
+		}
+		if out.EncryptIV != "" && len(out.EncryptIV) != encryptIVLen {
+			return nil, fmt.Errorf("encrypt_iv must be exactly %d characters, got %d", encryptIVLen, len(out.EncryptIV))
+		}
+		if out.EncryptMode == encryptModeECB {
+			// ECB has no IV; sending one would only confuse the app.
+			out.EncryptIV = ""
+		}
+	} else {
+		out.EncryptMode = ""
+		out.EncryptIV = ""
+	}
 
 	// --- enum-ish options ------------------------------------------------
 	out.Level = strings.TrimSpace(out.Level)

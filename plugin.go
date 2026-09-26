@@ -312,10 +312,14 @@ func (p *Plugin) forward(ctx context.Context, msg gotifyMessage) {
 	for _, key := range splitKeys(cfg.DeviceKeys) {
 		push := buildBarkPush(cfg, msg, key, appName)
 		if cfg.DryRun {
-			log.Printf("[bark] dry-run: would push to device %s: %+v", key, push)
+			if cfg.EncryptKey != "" {
+				log.Printf("[bark] dry-run: would push to device %s (encrypted, mode=%s): %+v", key, cfg.EncryptMode, push)
+			} else {
+				log.Printf("[bark] dry-run: would push to device %s: %+v", key, push)
+			}
 			continue
 		}
-		if err := sendBarkPush(ctx, client, cfg.ServerURL, push); err != nil {
+		if err := sendBarkPush(ctx, client, cfg, key, push); err != nil {
 			log.Printf("[bark] push to device %s failed (gotify id=%d): %v", key, msg.ID, err)
 			continue
 		}

@@ -19,7 +19,7 @@ Gotify 本身没有「收到消息」的插件钩子，所以本插件换了个�
 
 1. 用你创建的 **Gotify 客户端令牌（client token）** 连上 Gotify 的 WebSocket 接口 `/stream`；
 2. 该接口会把**这个用户能看到的全部通知**（所有应用、包括其它程序推来的）实时推过来；
-3. 插件逐条把消息映射成 Bark 的推送参数，调用 `POST {server_url}/push`；
+3. 插件逐条把消息映射成 Bark 的推送参数，调用 `POST {server_url}/push`（开启加密后改为 `POST {server_url}/{device_key}` 并发送密文）；
 4. 多个设备就是多次调用；失败自动重试 3 次（退避 0 / 0.5s / 1s），失败只写日志，**绝不会影响 Gotify 本身**。
 
 因为走的是标准 API，所以：
@@ -37,10 +37,10 @@ Gotify 本身没有「收到消息」的插件钩子，所以本插件换了个�
 
 ```bash
 # x86_64 服务器 / NAS / 云主机
-curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.0.0/bark-linux-amd64.so
+curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.1.0/bark-linux-amd64.so
 
 # ARM64（树莓派 4/5、甲骨文 ARM、Apple Silicon 上的 Linux 虚拟机）
-curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.0.0/bark-linux-arm64.so
+curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.1.0/bark-linux-arm64.so
 ```
 
 也可以在包管理页面浏览下载：<https://gitea.example.com/dsh/-/packages>
@@ -114,6 +114,14 @@ device_keys: "key1,key2"
 # Bark 服务端；自建示例 http://192.168.1.10:8080
 server_url: "https://api.day.app"
 
+# ── 端到端加密（Bark App 里打开「加密」时才需要填）────────
+# 32 位密钥，必须与 Bark App 中设置的完全一致；留空则明文推送
+encrypt_key: ""
+# 加密模式：cbc（默认，每条消息随机 IV）或 ecb
+encrypt_mode: "cbc"
+# CBC 模式的固定 IV（16 位）；一般留空，由插件每次随机生成
+encrypt_iv: ""
+
 # ── 推送外观 ─────────────────────────────────────────────
 # 用 Gotify 的应用名作为 Bark 分组（推荐开启）
 group_by_app: true
@@ -165,6 +173,56 @@ dry_run: false
 - **一眼看出是哪台机器**：`group_by_app` 开着，Bark 里就会按 Gotify 应用名分组。
 - **点击通知直达 Gotify 消息页**：内置占位符只有 `{appid}` `{appname}` `{title}` `{message}` `{priority}` `{messageid}`，所以地址要写全，例如
   `url_template: "http://192.168.1.10:8080/#/messages"`。
+
+---
+
+## 三点五、端到端加密推送
+
+Bark 支持**端到端加密**：通知正文在推送前就被加密，**bark-server 只能看到密文**，只有你的 iPhone 能解密。自建服务器给别人用、或者服务端跑在公网上时，强烈建议开启。
+
+参考：[Bark 官方加密文档](https://bark.day.app/#/encryption)
+
+### 配置方法
+
+**第一步，在 Bark App 里开启加密并设置密钥。**
+
+打开 Bark App → 右上角进设置 → 打开「加密」→ 填入一个 **32 位** 的密钥（字母数字符号都行，务必记牢，丢了就解不开）。
+
+**第二步，把同一个密钥填进插件。**
+
+```yaml
+encrypt_key: "你设置的那个32位密钥"
+encrypt_mode: "cbc"     # 默认值，一般不用改
+encrypt_iv: ""          # 留空即可
+```
+
+保存后插件会自动切换到加密通道，日志里会显示 `(encrypted, mode=cbc)`。
+
+### 两种模式怎么选
+
+| 模式 | 说明 | 建议 |
+| --- | --- | --- |
+| `cbc` | 每条消息随机生成 IV，相同内容也会产生不同密文 | **默认选这个**，更安全 |
+| `ecb` | 不传 IV，相同内容产生相同密文 | 仅在 App 端只支持 ECB 时使用 |
+
+`encrypt_iv` 只有在必须复现固定密文时才需要填（16 位）；填了之后所有消息共用同一个 IV，**安全性会下降**，平时请留空。
+
+### 插件到底做了什么
+
+开启加密后，插件的行为会变成（与 Bark 官方脚本完全等价）：
+
+| | 明文模式（默认） | 加密模式 |
+| --- | --- | --- |
+| 请求地址 | `POST {server_url}/push` | `POST {server_url}/{device_key}` |
+| 请求格式 | JSON | 表单 `ciphertext=...&iv=...` |
+| 正文 | 明文 JSON | AES-256-CBC 密文（Base64） |
+| 设备密钥位置 | JSON 字段 `device_key` | URL 路径 |
+
+加密细节：`AES-256` + `PKCS#7` 填充，密钥为 32 个 ASCII 字符，IV 为 16 个 ASCII 字符 —— 与 Bark 文档里那段 `openssl enc -aes-256-cbc` 脚本产出**逐字节一致**（仓库里的 `bark_test.go` 就是用官方示例的密文做断言的）。
+
+> ⚠️ 注意：Bark 文档的脚本里 `xxd -ps` 那两行只是为了满足 `openssl -K/-iv` 要求十六进制输入，**真正发出去的 `iv` 参数是那 16 个原始字符**，不是它的十六进制形式。插件直接按原始字符处理，两边结果相同。
+>
+> ⚠️ 加密模式下 `device_key` 不再是 JSON 字段：插件会把它拼进 URL，这正是 Bark 加密接口的设计。
 
 ---
 
@@ -344,7 +402,9 @@ curl http://你的gotify/plugin/1/custom/<plugin-token>/bark
   - 分组（`group_by_app`）、级别、铃声、图标、`url_template` 等参数正确送达服务端；
   - 配置热更新、Enable / Disable 即时生效（毫秒级返回）；
   - bark-server 宕机时自动重试并只记日志，Gotify 不受影响；
-  - 断线自动重连（指数退避 2s → 60s）。
+  - 断线自动重连（指数退避 2s → 60s）；
+  - **端到端加密**：CBC（随机 IV）、CBC（固定 IV）、ECB 三种模式的实际请求均已抓包解密核对，
+    密文内容与发送的中文/表情正文完全一致；加密实现与 Bark 官方示例的密文**逐字节相同**（见 `bark_test.go`）。
 
 ---
 
@@ -358,6 +418,7 @@ curl http://你的gotify/plugin/1/custom/<plugin-token>/bark
 | `bark.go` | Bark 侧：`POST /push` 请求与重试 |
 | `config.go` | 配置结构、默认值、校验与规范化 |
 | `display.go` | 插件页面上的中文图文说明 |
+| `bark_test.go` | 加密与请求路由的单元测试（含 Bark 官方示例密文的断言） |
 | `scripts/build.sh` | 构建脚本（含包指纹对齐逻辑） |
 | `Dockerfile` | 用官方镜像构建 |
 | `build/*.so` | 编译产物（不纳入版本管理，由 `scripts/build.sh` 生成，或从 Releases 下载） |
