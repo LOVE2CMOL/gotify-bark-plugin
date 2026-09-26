@@ -33,29 +33,41 @@ Gotify 本身没有「收到消息」的插件钩子，所以本插件换了个�
 
 ### 1. 拿到插件文件
 
-直接使用 `build/` 下的产物：
+**方式 A：下载预编译产物（最省事）**
+
+到本仓库的 **Releases** 页面下载对应架构的文件：
 
 | 文件 | 适用平台 |
 | --- | --- |
-| `build/bark-linux-amd64.so` | x86_64 服务器 / NAS / 云主机（绝大多数情况） |
-| `build/bark-linux-arm64.so` | ARM64（树莓派 4/5、甲骨文 ARM、Apple Silicon 上的 Linux 虚拟机） |
+| `bark-linux-amd64.so` | x86_64 服务器 / NAS / 云主机（绝大多数情况） |
+| `bark-linux-arm64.so` | ARM64（树莓派 4/5、甲骨文 ARM、Apple Silicon 上的 Linux 虚拟机） |
 
-> 这两个文件是针对 **官方 gotify v3.1.1 发布版**编译并**逐包校验过兼容性**的，可以直接用。
-> 如果你用的是别的版本，请见第 6 节「兼容性」。
+这两个文件是针对 **官方 gotify v3.1.1 发布版**编译并**逐包校验过兼容性**的，可以直接用。
+
+**方式 B：自己编译**
+
+```bash
+git clone https://gitea.example.com/dsh/dsh-gotify-bark-plugin.git
+cd dsh-gotify-bark-plugin
+./scripts/build.sh          # 产物输出到 build/ 目录
+```
+
+> 插件必须与 Gotify 本体「同源构建」才能加载。上面两种方式产出的 `.so` 都是针对**官方发布版**对齐的；
+> 如果你用的是自己编译的 gotify，请见第 6 节「兼容性」。
 
 ### 2. 放进 Gotify 的插件目录
 
 **Docker 部署：**
 
 ```bash
-docker cp build/bark-linux-amd64.so gotify:/app/data/plugins/bark.so
+docker cp bark-linux-amd64.so gotify:/app/data/plugins/bark.so
 docker restart gotify
 ```
 
 **原生部署：**
 
 ```bash
-cp build/bark-linux-amd64.so "$GOTIFY_PLUGINSDIR/bark.so"
+cp bark-linux-amd64.so "$GOTIFY_PLUGINSDIR/bark.so"
 # GOTIFY_PLUGINSDIR 未设置时默认为 gotify 工作目录下的 data/plugins
 systemctl restart gotify
 ```
@@ -224,7 +236,7 @@ GOROOT=/usr/local/go        GOMODCACHE=/go/pkg/mod
 | `gotify-linux-amd64` (v3.1.1) | 313 | **313 / 313 ✅** |
 | `gotify-linux-arm64` (v3.1.1) | 312 | **312 / 312 ✅** |
 
-也就是说，`build/` 下的两个 `.so` 与**官方发布版**是完全匹配的。
+也就是说，本项目编译出的两个 `.so` 与**官方发布版**是完全匹配的。
 
 ### 如果你的 Gotify 不是官方发布版
 
@@ -340,7 +352,7 @@ curl http://你的gotify/plugin/1/custom/<plugin-token>/bark
 | `display.go` | 插件页面上的中文图文说明 |
 | `scripts/build.sh` | 构建脚本（含包指纹对齐逻辑） |
 | `Dockerfile` | 用官方镜像构建 |
-| `build/*.so` | 已编译好的 amd64 / arm64 插件 |
+| `build/*.so` | 编译产物（不纳入版本管理，由 `scripts/build.sh` 生成，或从 Releases 下载） |
 
 ---
 
