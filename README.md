@@ -37,10 +37,10 @@ Gotify 本身没有「收到消息」的插件钩子，所以本插件换了个�
 
 ```bash
 # x86_64 服务器 / NAS / 云主机
-curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.1.0/bark-linux-amd64.so
+curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.1.1/bark-linux-amd64.so
 
 # ARM64（树莓派 4/5、甲骨文 ARM、Apple Silicon 上的 Linux 虚拟机）
-curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.1.0/bark-linux-arm64.so
+curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.1.1/bark-linux-arm64.so
 ```
 
 也可以在包管理页面浏览下载：<https://gitea.example.com/dsh/-/packages>

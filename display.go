@@ -51,6 +51,7 @@ func (p *Plugin) renderDisplay(location *url.URL) string {
 	b.WriteString("   多个设备用逗号分隔，例如 `key1,key2`。\n")
 	b.WriteString("3. **填写 Bark 服务端**：自建服务填 `server_url: http://你的IP:8080`；用官方服务则填 `https://api.day.app`。\n")
 	b.WriteString("4. 保存配置后确认 `enabled: true`，本页状态应变为「✅ 运行中」。\n\n")
+	b.WriteString("> **只有 `device_keys`、`server_url`、`client_token` 三项是必填的**（`gotify_url` 一般可自动识别）；下面示例里的其余配置项保持默认即可，每一项都附有中文注释，需要时再改。\n\n")
 
 	b.WriteString("#### 配置示例\n\n```yaml\n")
 	b.WriteString(exampleConfig(cfg))
@@ -98,39 +99,67 @@ func exampleConfig(cfg *Config) string {
 		}
 	}
 	return fmt.Sprintf(`enabled: true
-# Gotify 地址；留空则自动使用当前访问地址，Docker 部署建议显式填写
-gotify_url: %q
-# Gotify 客户端令牌（WebUI -> Clients -> Create Client）
-client_token: "gtfy..."
-# Bark 设备密钥，多个用逗号分隔
+
+# ══ 必须填写（四选三，加密可选）══════════════════════
+# Bark 设备密钥：App 首页推送 URL 中间那段，多个用逗号分隔
 device_keys: "yourDeviceKey"
-# Bark 服务端（自建示例：http://192.168.1.10:8080）
+# Bark 服务端：自建填 http://192.168.1.10:8080，官方服务填 https://api.day.app
 server_url: %q
-# ── 端到端加密（Bark App 里打开「加密」时才需要填）──
-# 32 位密钥，必须与 App 里设置的完全一致；留空则明文推送
+# Gotify 地址：留空则用你打开本页的地址；Docker 部署建议显式填写
+gotify_url: %q
+# Gotify 客户端令牌（WebUI -> Clients -> Create Client，只显示一次）
+client_token: "gtfy..."
+
+# ══ 端到端加密（可选，Bark App 开了「加密」才填）═══════
+# 32 位密钥，必须与 App 里设置的完全一致；留空 = 明文推送
 encrypt_key: ""
 # cbc（默认，每条消息随机 IV）或 ecb
 encrypt_mode: %q
-# CBC 固定 IV（16 位），一般留空让插件每次随机生成
+# CBC 固定 IV（16 位），一般留空，由插件每次随机生成
 encrypt_iv: ""
+
+# ══ 通知外观（可选，保持默认即可）═════════════════════
+# true = 用 Gotify 应用名作为 Bark 里的分组（推荐）
 group_by_app: true
+# 上面为 false 或应用名为空时，统一使用的分组名
 default_group: ""
+# 中断级别：active（默认）/ timeSensitive / passive / critical / 留空
 level: %q
+# 铃声名，例如 alarm、minuet；留空用 Bark 默认
 sound: ""
+# 通知图标 URL（iOS 15+）
 icon: ""
+# "1" = 响铃持续 30 秒（重要告警用）
 call: ""
-auto_copy: ""
-copy_template: ""
-url_template: ""
-action: ""
-archive: ""
-ttl: 0
+# 角标数字，-1 = 不改动
 badge: -1
+
+# ══ 点击通知时做什么（可选）═══════════════════════════
+# 点击后跳转的 URL，占位符：{appid} {appname} {title} {message} {priority} {messageid}
+url_template: ""
+# "none" = 点击不跳转（只关掉通知）
+action: ""
+# "1" = 自动把正文复制到剪贴板
+auto_copy: ""
+# 复制的内容模板，留空则复制正文
+copy_template: ""
+# "1" = 在 Bark 的历史记录里保留这条
+archive: ""
+# 历史保留秒数，0 = Bark 默认；>0 会自动打开 archive
+ttl: 0
+
+# ══ 过滤 / 调试（可选）════════════════════════════════
+# 低于此优先级的消息不推送，范围 -2 ~ 10
 min_priority: -2
+# 标题以此字符串开头则丢弃（可用来防回环）
 skip_title_prefix: ""
+# true = 把 Gotify 的 extras（JSON）追加到正文
 include_extras: false
+# 单次 Bark 请求超时（秒）
 timeout_seconds: 10
+# true = 打印每条转发/跳过的日志
 debug: false
+# true = 只记日志、不真正推送（调试试用）
 dry_run: false
-`, gotify, server, encMode, level)
+`, server, gotify, encMode, level)
 }
