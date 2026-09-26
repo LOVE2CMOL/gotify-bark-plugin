@@ -105,8 +105,10 @@ enabled: true
 
 # ── 必填三项 ─────────────────────────────────────────────
 # Gotify 地址。留空则自动使用你访问插件页时的地址；
-# Docker 部署下自动探测到的地址常常在容器内不可达，建议显式填写，例如 http://gotify:80
-gotify_url: "http://192.168.1.10:8080"
+# Docker 下自动探测的地址常常在容器内不可达，建议显式填写。
+# 注意它需要「容器内」和「手机」都能访问（见第四节末尾的说明），
+# 最省事的填法就是直接写你平时访问 Gotify 的那个域名
+gotify_url: "https://gotify.example.com"
 # Gotify 客户端令牌（WebUI -> Clients -> Create Client）
 client_token: "gtfyc.xxxxxxxx"
 # Bark 设备密钥，多个用逗号/空格/换行分隔；也接受完整推送 URL（自动提取 key）
@@ -280,6 +282,54 @@ BARK_SERVER_ADDRESS=0.0.0.0:8080 BARK_SERVER_DATA_DIR=./data ./bark-server_linux
 3. 插件配置里 `server_url: http://你的IP:8080`、`device_keys: 刚才的key`。
 
 > **验证服务是否正常**：`curl http://你的IP:8080/ping` 应返回 `{"code":200,"message":"pong"}`。
+
+### Gotify 与 Bark 在同一台机器上：走容器内部网络
+
+如果两个容器由同一个 `docker-compose.yml` 管理，可以让插件**按容器名直连** Bark，不走公网域名 —— 少绕一圈反向代理，反代挂了推送也不会断。
+
+默认的 `network_mode: bridge` 会让容器只能用「宿主机 IP + 映射端口」互访，**容器名无法解析**。把这两行删掉，compose 就会把同一个文件里的服务放进同一张自定义网络，服务名可以直接当域名用：
+
+```yaml
+services:
+  gotify:
+    container_name: gotify-20230112
+    image: gotify/server:latest
+    ports:
+      - 10086:80
+    # network_mode: bridge        ← 删掉
+
+  bark:
+    container_name: bark-server
+    image: finab/bark-server:latest
+    command: ["bark-server", "-dsn=bark:xxx@tcp(192.168.1.10:3306)/bark"]
+    ports:
+      - 10087:8080
+    # network_mode: bridge        ← 删掉
+```
+
+（想显式声明的话，也可以给两个服务都加 `networks: [gotify-bark]`，文件末尾再写 `networks: { gotify-bark: { driver: bridge } }`，效果一样。）
+
+然后插件配置里：
+
+```yaml
+server_url: "http://bark:8080"   # 服务名:容器内端口 —— 不是宿主映射出去的 10087
+```
+
+三个容易踩的坑：
+
+1. **必须写全 `http://`**。插件在地址里看不到 `://` 时会自动补 `https://`，于是 `bark:8080` 会变成 `https://bark:8080` —— 内网没有证书，连接直接失败。
+2. **端口写容器内的 `8080`**，不是宿主机映射的 `10087`。
+3. **`gotify_url` 不要改成本地回环地址**。插件除了用它订阅消息流，还会用它拼出 `icon: auto` 的图标地址发给手机；写成 `http://127.0.0.1` 后手机拉不到图标。填手机也能访问的地址即可。
+
+改完重建容器，再验证一次：
+
+```bash
+docker compose up -d
+docker exec gotify-20230112 wget -qO- http://bark:8080/ping
+# 期望输出：{"code":200,"message":"pong"}
+```
+
+> Bark App 里填的服务器地址（那个公网域名）**不用改**：那是手机拉取通知用的，和插件推送是两条独立的路，只要指向同一个 bark-server 实例就行。
 
 ---
 
