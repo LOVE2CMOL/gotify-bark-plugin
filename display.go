@@ -101,7 +101,8 @@ func exampleConfig(cfg *Config) string {
 	return fmt.Sprintf(`enabled: true
 
 # ══ 必须填写（四选三，加密可选）══════════════════════
-# Bark 设备密钥：App 首页推送 URL 中间那段，多个用逗号分隔
+# Bark 设备密钥：App 首页推送 URL 中间那段；多台设备用逗号分隔
+# 注意每台设备必须用各自的 key（同一个 key 两台手机只有一台能收到）
 device_keys: "yourDeviceKey"
 # Bark 服务端：自建填 http://192.168.1.10:8080，官方服务填 https://api.day.app
 server_url: %q
@@ -110,10 +111,11 @@ gotify_url: %q
 # Gotify 客户端令牌（WebUI -> Clients -> Create Client，只显示一次）
 client_token: "gtfy..."
 
-# ══ 端到端加密（可选，Bark App 开了「加密」才填）═══════
-# 32 位密钥，必须与 App 里设置的完全一致；留空 = 明文推送
+# ══ 端到端加密（可选，Bark App 里开了「推送加密」才填）═══
+# App 端请选：算法 AES256 / 模式 CBC / Padding pkcs7（GCM 暂不支持）
+# 32 位密钥，必须与 App 里填的完全一致；留空 = 明文推送
 encrypt_key: ""
-# cbc（默认，每条消息随机 IV）或 ecb
+# cbc（默认，每条消息随机 IV）或 ecb，需与 App 里选的模式一致
 encrypt_mode: %q
 # CBC 固定 IV（16 位），一般留空，由插件每次随机生成
 encrypt_iv: ""
