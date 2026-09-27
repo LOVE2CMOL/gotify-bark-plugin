@@ -13,7 +13,7 @@ import (
 )
 
 // Version is the plugin version reported to Gotify.
-const Version = "1.2.1"
+const Version = "1.2.2"
 
 // ModulePath identifies this plugin. Gotify refuses plugins with an empty path.
 const ModulePath = "https://github.com/love2cmol/gotify-bark-plugin"

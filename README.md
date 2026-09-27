@@ -42,18 +42,18 @@ Gotify 本身没有「收到消息」的插件钩子，所以本插件换了个�
 ```bash
 # x86_64 服务器 / NAS / 云主机
 curl -LO -H "Authorization: token <TOKEN>" \
-  https://gitea.example.com/dsh/gotify-bark-plugin/releases/download/v1.2.1/bark-linux-amd64.so
+  https://gitea.example.com/dsh/gotify-bark-plugin/releases/download/v1.2.2/bark-linux-amd64.so
 
 # ARM64（树莓派 4/5、甲骨文 ARM、Apple Silicon 上的 Linux 虚拟机）
 curl -LO -H "Authorization: token <TOKEN>" \
-  https://gitea.example.com/dsh/gotify-bark-plugin/releases/download/v1.2.1/bark-linux-arm64.so
+  https://gitea.example.com/dsh/gotify-bark-plugin/releases/download/v1.2.2/bark-linux-arm64.so
 ```
 
 **方式 B：从包管理页面下载（无需登录）**
 
 ```bash
-curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.2.1/bark-linux-amd64.so
-curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.2.1/bark-linux-arm64.so
+curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.2.2/bark-linux-amd64.so
+curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.2.2/bark-linux-arm64.so
 ```
 
 版本列表：<https://gitea.example.com/dsh/-/packages>
@@ -106,6 +106,18 @@ systemctl restart gotify
 | `server_url` | Bark 服务端地址 | 自建填 `http://你的IP:8080`；用官方服务填 `https://api.day.app` |
 
 保存后把 `enabled` 设为 `true`，页面状态变成「✅ 运行中」就成功了。
+
+### ⚠️ 从 v1.2.1 及更早版本升级（v1.2.2 起要重新配置一次）
+
+v1.2.2 把插件的 `ModulePath` 改成了 `https://github.com/love2cmol/gotify-bark-plugin`。
+Gotify 正是用这个字段识别插件的，所以换上新的 `.so` 并重启之后：
+
+1. Plugins 页面里会**多出一个全新的插件**（新的 id、新的 token），旧的那一条不再显示；
+2. 旧插件里的配置**不会继承**，需要在新插件页面重新填写一遍；
+3. 新插件默认是**未启用**状态 —— 填完配置后还要点一下 **Enable**，状态变成「✅ 运行中」才会开始转发。
+
+配置内容照抄原来的即可（`device_keys` / `server_url` / `client_token` 三项必填）。
+旧记录会留在数据库里，不再显示，也不影响使用。
 
 ---
 

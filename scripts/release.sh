@@ -141,5 +141,21 @@ EOF
   exit 1
 fi
 
+# --- 5. 同步一份到包管理页面（免登录也能下载）--------------------------------
+echo "==> 同步到包管理页面（无需登录即可下载）"
+PKG_API="$GITEA_URL/api/packages/$OWNER/generic/$REPO/$VERSION"
+for f in "${ARTIFACTS[@]}"; do
+  name="$(basename "$f")"
+  # 必须显式声明 application/octet-stream，否则 Gitea 会返回 500。
+  code="$(curl -sS -m 900 -o /dev/null -w '%{http_code}' -X PUT -H "$AUTH" \
+    -H 'Content-Type: application/octet-stream' --data-binary "@$f" "$PKG_API/$name")"
+  if [ "$code" = "201" ] || [ "$code" = "200" ]; then
+    echo "    ✅ $name"
+  else
+    echo "    ⚠️  $name 上传失败（HTTP $code），发布页面附件不受影响" >&2
+  fi
+done
+
 echo
 echo "完成：$GITEA_URL/$OWNER/$REPO/releases/tag/$VERSION"
+echo "包管理页面（免登录）：$GITEA_URL/$OWNER/-/packages/generic/$REPO/$VERSION"
