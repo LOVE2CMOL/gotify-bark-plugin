@@ -33,17 +33,30 @@ Gotify 本身没有「收到消息」的插件钩子，所以本插件换了个�
 
 ### 1. 拿到插件文件
 
-**方式 A：下载预编译产物（最省事）**
+**方式 A：从发布页面下载（推荐）**
+
+打开 <https://gitea.example.com/dsh/gotify-bark-plugin/releases>，选最新版本，在页面底部的 **Assets** 里点对应架构下载即可（仓库是私有的，需要先登录 Gitea）。
+
+命令行下载（`<TOKEN>` 换成自己的 Gitea 访问令牌）：
 
 ```bash
 # x86_64 服务器 / NAS / 云主机
-curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.2.1/bark-linux-amd64.so
+curl -LO -H "Authorization: token <TOKEN>" \
+  https://gitea.example.com/dsh/gotify-bark-plugin/releases/download/v1.2.1/bark-linux-amd64.so
 
 # ARM64（树莓派 4/5、甲骨文 ARM、Apple Silicon 上的 Linux 虚拟机）
+curl -LO -H "Authorization: token <TOKEN>" \
+  https://gitea.example.com/dsh/gotify-bark-plugin/releases/download/v1.2.1/bark-linux-arm64.so
+```
+
+**方式 B：从包管理页面下载（无需登录）**
+
+```bash
+curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.2.1/bark-linux-amd64.so
 curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.2.1/bark-linux-arm64.so
 ```
 
-也可以在包管理页面浏览下载：<https://gitea.example.com/dsh/-/packages>
+版本列表：<https://gitea.example.com/dsh/-/packages>
 
 | 文件 | 适用平台 |
 | --- | --- |
@@ -513,6 +526,22 @@ docker build --build-arg GOARCH=arm64 -o build .
 
 > ⚠️ 千万不要加 `-trimpath`：它会让 `runtime/cgo` 的导出数据变化，导致加载失败。
 
+### 发布新版本
+
+编译产物统一挂在 **Releases 发布页面**，一条命令搞定：
+
+```bash
+./scripts/build.sh all                        # 先生成 build/bark-linux-*.so
+GITEA_TOKEN=xxx ./scripts/release.sh v1.2.2   # 打标签 + 建 Release + 上传附件
+```
+
+脚本会计算 sha256、创建 Release、把两个 `.so` 作为附件挂到发布页面，并在结束时打印发布页地址。
+
+> ⚠️ Gitea 的 Release 附件受 `[attachment] MAX_SIZE` 限制（默认 **4 MB**），而插件产物约 30 MB。
+> 需要服务端先调大：`app.ini` 里写 `[attachment] MAX_SIZE = 64`，Docker 部署可加环境变量
+> `GITEA__attachment__MAX_SIZE=64`，重启 Gitea 生效。未调大时上传会返回 413，
+> 脚本会直接提示，此时产物仍可从包管理页面下载。
+
 ---
 
 ## 八、验证与排错
@@ -588,6 +617,7 @@ curl http://你的gotify/plugin/1/custom/<plugin-token>/bark
 | `display.go` | 插件页面上的中文图文说明 |
 | `bark_test.go` | 加密与请求路由的单元测试（含 Bark 官方示例密文的断言） |
 | `scripts/build.sh` | 构建脚本（含包指纹对齐逻辑） |
+| `scripts/release.sh` | 发布脚本：打标签、建 Release、把编译产物挂到发布页面 |
 | `Dockerfile` | 用官方镜像构建 |
 | `build/*.so` | 编译产物（不纳入版本管理，由 `scripts/build.sh` 生成，或从 Releases 下载） |
 
