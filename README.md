@@ -527,30 +527,33 @@ docker build --build-arg GOARCH=arm64 -o build .
 
 ### 发布新版本
 
-```bash
-./scripts/build.sh all                        # 先生成 build/bark-linux-*.so
-GITHUB_TOKEN=xxx ./scripts/release.sh v1.2.3  # 同步代码 + 打标签 + 建 Release + 传附件
-```
-
-`release.sh` 会计算 sha256、创建 Release、把两个 `.so` 作为附件挂到发布页面，结束时打印发布页地址。
-
-**公开仓库里的提交邮箱会被自动脱敏**：脚本先把仓库复制到临时目录，用 `scripts/sync-github.sh`
-把提交邮箱统一改写成 `LOVE2CMOL@users.noreply.github.com`，再强推 main 与全部标签，
-所以 GitHub 上看不到真实邮箱（本地仓库与其它远端不受影响；两边 commit hash 因此不同，属预期）。
-
-如果同时还维护了自建 Gitea 镜像，补上三个变量即可**一次发两边**：
+**默认只发布到自建 Gitea**，地址自动从 `origin` 远端推断（脚本里不写死任何域名）：
 
 ```bash
-GITHUB_TOKEN=xxx \
-GITEA_URL=https://gitea.example.com GITEA_TOKEN=yyy GITEA_OWNER=yourname \
-./scripts/release.sh v1.2.3
+./scripts/build.sh all
+GITEA_TOKEN=xxx ./scripts/release.sh v1.2.3
 ```
+
+脚本会依次：算 sha256 → 打标签 → 推送 Gitea → 建 Release → 把两个 `.so` 作为附件挂上 →
+再同步一份到 Gitea 的包管理页面（免登录下载）。
+
+**GitHub 是公开镜像，必须显式加 `--github` 才会触碰**：
+
+```bash
+GITEA_TOKEN=xxx GITHUB_TOKEN=yyy ./scripts/release.sh --github v1.2.3
+```
+
+不带 `--github` 时脚本连一个 GitHub 请求都不会发出。
 
 只想同步代码、不发版：
 
 ```bash
 GITHUB_TOKEN=xxx ./scripts/sync-github.sh
 ```
+
+**公开仓库里的提交邮箱会被自动脱敏**：`sync-github.sh` 会先把仓库复制到临时目录，把提交邮箱统一
+改写成 `LOVE2CMOL@users.noreply.github.com` 再强推 main 与全部标签，本地仓库与 Gitea 完全不受影响
+（两边 commit hash 因此不同，属预期行为）。
 
 > ⚠️ Gitea 的 Release 附件受 `[attachment] MAX_SIZE` 限制（默认 **4 MB**），而插件产物约 30 MB。
 > 需要服务端先调大：`app.ini` 里写 `[attachment] MAX_SIZE = 64`，Docker 部署可加环境变量

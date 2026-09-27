@@ -1,54 +1,117 @@
 #!/usr/bin/env bash
 #
 # 发布新版本：打标签 → 建 Release → 把预编译产物挂到发布页面。
-# GitHub 为主，自建 Gitea 镜像可选，两边可以一次同时发布。
+#
+# 默认**只发布到自建 Gitea**（地址自动从 origin 远端推断）。
+# GitHub 是公开镜像，必须显式加 --github 才会触碰，避免误推。
 #
 # ── 用法 ─────────────────────────────────────────────────────────────────────
 #   ./scripts/build.sh all
-#   GITHUB_TOKEN=xxx ./scripts/release.sh v1.2.3
+#   GITEA_TOKEN=xxx ./scripts/release.sh v1.2.3             # 只发 Gitea（默认）
+#   GITEA_TOKEN=xxx ./scripts/release.sh --github v1.2.3    # Gitea + GitHub
+#
+#   ./scripts/release.sh --help
 #
 # ── 环境变量 ─────────────────────────────────────────────────────────────────
-#   GITHUB_TOKEN   发布到 GitHub 时必填（细粒度令牌需 Contents: Read and write）
-#   GITHUB_REPO    可选，默认 LOVE2CMOL/gotify-bark-plugin
+#   GITEA_TOKEN    发布到 Gitea 时必填（仓库写权限）
+#   GITEA_URL      可选，默认从 origin 远端推断，例如 https://gitea.example.com
+#   GITEA_OWNER    可选，默认从 origin 远端推断
+#   GITEA_REPO     可选，默认从 origin 远端推断
 #
-#   GITEA_URL      自建 Gitea 的根地址，例如 https://gitea.example.com
-#   GITEA_TOKEN    自建 Gitea 的访问令牌；与 GITEA_URL 同时给出才会启用
-#   GITEA_OWNER    可选，默认 dsh
-#   GITEA_REPO     可选，默认 gotify-bark-plugin
+#   GITHUB_TOKEN   仅在使用 --github 时必填（Contents: Read and write）
+#   GITHUB_REPO    可选，默认 LOVE2CMOL/gotify-bark-plugin
+#   PUBLISH_GITHUB 置 1 等价于传 --github
 #
 # ── 关于附件大小 ─────────────────────────────────────────────────────────────
-# GitHub 的 Release 附件上限为 2 GB，无需任何配置。
 # Gitea 的 Release 附件受 [attachment] MAX_SIZE 限制（默认只有 4 MB），而插件
 # 产物约 30 MB，需要服务端先调大：app.ini 里写 [attachment] MAX_SIZE = 64，
 # Docker 部署可加环境变量 GITEA__attachment__MAX_SIZE=64，重启后生效。
-# 未调大时该平台会上传失败，脚本打印提示后继续处理另一个平台。
+# GitHub 的附件上限为 2 GB，无需配置。
 #
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-VERSION="${1:-}"
+usage() {
+  cat <<'EOF'
+用法: release.sh [--github] <版本号>
+
+  --github       同时发布到 GitHub（默认不触碰 GitHub）
+
+示例:
+  GITEA_TOKEN=xxx ./scripts/release.sh v1.2.3
+  GITEA_TOKEN=xxx GITHUB_TOKEN=yyy ./scripts/release.sh --github v1.2.3
+EOF
+}
+
+want_github=0
+if [ "${PUBLISH_GITHUB:-0}" = "1" ]; then
+  want_github=1
+fi
+VERSION=""
+for arg in "$@"; do
+  case "$arg" in
+    --github) want_github=1 ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    -*) echo "未知参数：$arg" >&2; usage >&2; exit 1 ;;
+    *) VERSION="$arg" ;;
+  esac
+done
+
 if [ -z "$VERSION" ]; then
-  echo "用法: $0 <版本号，如 v1.2.3>" >&2
+  usage >&2
   exit 1
 fi
 
-GITHUB_REPO="${GITHUB_REPO:-LOVE2CMOL/gotify-bark-plugin}"
-GITEA_OWNER="${GITEA_OWNER:-dsh}"
-GITEA_REPO="${GITEA_REPO:-gotify-bark-plugin}"
+# --- 解析 Gitea 地址（优先环境变量，其次 origin 远端）-------------------------
+derive_origin() {
+  local url rest host path owner repo scheme
+  url="$(git remote get-url origin 2>/dev/null || true)"
+  case "$url" in
+    http://* | https://*) ;;
+    *) return 1 ;;
+  esac
+  scheme="${url%%://*}"
+  rest="${url#*://}"
+  rest="${rest#*@}"
+  host="${rest%%/*}"
+  path="${rest#*/}"
+  path="${path%.git}"
+  owner="${path%%/*}"
+  repo="${path##*/}"
+  [ -n "$host" ] && [ -n "$owner" ] && [ -n "$repo" ] || return 1
+  printf '%s://%s|%s|%s\n' "$scheme" "$host" "$owner" "$repo"
+}
 
-want_github=0
-[ -n "${GITHUB_TOKEN:-}" ] && want_github=1
+if [ -z "${GITEA_URL:-}" ] || [ -z "${GITEA_OWNER:-}" ] || [ -z "${GITEA_REPO:-}" ]; then
+  if derived="$(derive_origin)"; then
+    IFS='|' read -r d_url d_owner d_repo <<<"$derived"
+    GITEA_URL="${GITEA_URL:-$d_url}"
+    GITEA_OWNER="${GITEA_OWNER:-$d_owner}"
+    GITEA_REPO="${GITEA_REPO:-$d_repo}"
+  fi
+fi
+
+GITHUB_REPO="${GITHUB_REPO:-LOVE2CMOL/gotify-bark-plugin}"
+
 want_gitea=0
-if [ -n "${GITEA_URL:-}" ] && [ -n "${GITEA_TOKEN:-}" ]; then
+if [ -n "${GITEA_TOKEN:-}" ] && [ -n "${GITEA_URL:-}" ] && [ -n "${GITEA_OWNER:-}" ]; then
   want_gitea=1
 fi
 
-if [ "$want_github" = 0 ] && [ "$want_gitea" = 0 ]; then
+if [ "$want_github" = 1 ] && [ -z "${GITHUB_TOKEN:-}" ]; then
+  echo "使用了 --github，但没有设置 GITHUB_TOKEN。" >&2
+  exit 1
+fi
+
+if [ "$want_gitea" = 0 ] && [ "$want_github" = 0 ]; then
   cat >&2 <<'EOF'
 没有可用的发布目标。
-  * 发布到 GitHub：设置 GITHUB_TOKEN
-  * 同时发布到自建 Gitea：再设置 GITEA_URL 与 GITEA_TOKEN
+  * 发布到自建 Gitea：设置 GITEA_TOKEN（地址默认从 origin 远端推断）
+  * 同时发布到 GitHub：再加 --github 并设置 GITHUB_TOKEN
 EOF
   exit 1
 fi
@@ -61,36 +124,38 @@ for f in "${ARTIFACTS[@]}"; do
   fi
 done
 
-# --- 1. 校验和 ---------------------------------------------------------------
+echo "==> 发布目标"
+if [ "$want_gitea" = 1 ]; then
+  echo "    Gitea  : ${GITEA_URL}/${GITEA_OWNER}/${GITEA_REPO}"
+fi
+if [ "$want_github" = 1 ]; then
+  echo "    GitHub : https://github.com/${GITHUB_REPO}（已显式确认）"
+else
+  echo "    GitHub : 跳过（需要时加 --github）"
+fi
+
 echo "==> 产物校验和"
 SHA_LINES="$(sha256sum "${ARTIFACTS[@]}")"
 printf '%s\n' "$SHA_LINES"
 
-# --- 2. 标签与推送 -----------------------------------------------------------
+# --- 标签 --------------------------------------------------------------------
 echo "==> 标签 $VERSION"
 git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null || git tag -a "$VERSION" -m "release $VERSION"
 
-push_to() {
-  local url="$1" label="$2"
-  git push -q "$url" HEAD:refs/heads/main 2>/dev/null ||
-    echo "    ($label 的 main 分支未推送，可能已是最新或存在分歧)" >&2
-  git push -q "$url" "$VERSION"
-  echo "    $label 已推送"
-}
+if [ "$want_gitea" = 1 ]; then
+  echo "==> 推送到 Gitea（保留原始提交信息）"
+  git push -q origin HEAD:refs/heads/main 2>/dev/null ||
+    echo "    (main 分支未推送，可能已是最新或存在分歧)" >&2
+  git push -q origin "$VERSION"
+  echo "    已推送"
+fi
 
-# GitHub 侧的代码与标签交给 sync-github.sh：它会在临时副本里把提交邮箱统一
-# 改写成 noreply 形式再推送，避免真实邮箱出现在公开仓库中。
 if [ "$want_github" = 1 ]; then
+  echo "==> 同步代码到 GitHub（提交邮箱改写为 noreply）"
   "$(dirname "$0")/sync-github.sh"
 fi
-if [ "$want_gitea" = 1 ]; then
-  gitea_host="${GITEA_URL#https://}"
-  gitea_host="${gitea_host#http://}"
-  gitea_host="${gitea_host%/}"
-  push_to "https://oauth2:${GITEA_TOKEN}@${gitea_host}/${GITEA_OWNER}/${GITEA_REPO}.git" Gitea
-fi
 
-# --- 3. Release 说明（供两个平台复用）----------------------------------------
+# --- Release 说明（两个平台共用）---------------------------------------------
 BODY_FILE="$(mktemp)"
 JSON_FILE="$(mktemp)"
 trap 'rm -f "$BODY_FILE" "$JSON_FILE"' EXIT
@@ -118,44 +183,7 @@ with open(out_path, 'w', encoding='utf-8') as fh:
     )
 PY
 
-# --- 4. GitHub ---------------------------------------------------------------
-if [ "$want_github" = 1 ]; then
-  echo "==> GitHub Release"
-  api="https://api.github.com/repos/${GITHUB_REPO}"
-  rid="$(curl -sS -H "Authorization: token $GITHUB_TOKEN" "$api/releases/tags/$VERSION" |
-    python3 -c 'import json,sys
-try: print(json.load(sys.stdin).get("id",""))
-except Exception: print("")')"
-  if [ -z "$rid" ]; then
-    rid="$(curl -sS -X POST -H "Authorization: token $GITHUB_TOKEN" \
-      -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' \
-      --data-binary "@$JSON_FILE" "$api/releases" |
-      python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')"
-    if [ -n "$rid" ]; then
-      echo "    已创建 (id=$rid)"
-    else
-      echo "    ⚠️  创建失败" >&2
-    fi
-  else
-    echo "    已存在，复用 (id=$rid)"
-  fi
-  if [ -n "$rid" ]; then
-    for f in "${ARTIFACTS[@]}"; do
-      name="$(basename "$f")"
-      code="$(curl -sS -m 900 -o /dev/null -w '%{http_code}' -X POST \
-        -H "Authorization: token $GITHUB_TOKEN" \
-        -H 'Content-Type: application/octet-stream' --data-binary "@$f" \
-        "https://uploads.github.com/repos/${GITHUB_REPO}/releases/$rid/assets?name=$name")"
-      case "$code" in
-        200 | 201) echo "    ✅ $name" ;;
-        422) echo "    = $name 已存在，跳过" ;;
-        *) echo "    ⚠️  $name 上传失败（HTTP $code）" >&2 ;;
-      esac
-    done
-  fi
-fi
-
-# --- 5. Gitea（可选）---------------------------------------------------------
+# --- Gitea Release -----------------------------------------------------------
 if [ "$want_gitea" = 1 ]; then
   echo "==> Gitea Release"
   base="${GITEA_URL%/}/api/v1/repos/${GITEA_OWNER}/${GITEA_REPO}"
@@ -202,11 +230,48 @@ except Exception: print("")')"
   fi
 fi
 
+# --- GitHub Release（仅在显式 --github 时）-----------------------------------
+if [ "$want_github" = 1 ]; then
+  echo "==> GitHub Release"
+  api="https://api.github.com/repos/${GITHUB_REPO}"
+  rid="$(curl -sS -H "Authorization: token $GITHUB_TOKEN" "$api/releases/tags/$VERSION" |
+    python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("id",""))
+except Exception: print("")')"
+  if [ -z "$rid" ]; then
+    rid="$(curl -sS -X POST -H "Authorization: token $GITHUB_TOKEN" \
+      -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' \
+      --data-binary "@$JSON_FILE" "$api/releases" |
+      python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')"
+    if [ -n "$rid" ]; then
+      echo "    已创建 (id=$rid)"
+    else
+      echo "    ⚠️  创建失败" >&2
+    fi
+  else
+    echo "    已存在，复用 (id=$rid)"
+  fi
+  if [ -n "$rid" ]; then
+    for f in "${ARTIFACTS[@]}"; do
+      name="$(basename "$f")"
+      code="$(curl -sS -m 900 -o /dev/null -w '%{http_code}' -X POST \
+        -H "Authorization: token $GITHUB_TOKEN" \
+        -H 'Content-Type: application/octet-stream' --data-binary "@$f" \
+        "https://uploads.github.com/repos/${GITHUB_REPO}/releases/$rid/assets?name=$name")"
+      case "$code" in
+        200 | 201) echo "    ✅ $name" ;;
+        422) echo "    = $name 已存在，跳过" ;;
+        *) echo "    ⚠️  $name 上传失败（HTTP $code）" >&2 ;;
+      esac
+    done
+  fi
+fi
+
 echo
 echo "发布完成：$VERSION"
-if [ "$want_github" = 1 ]; then
-  echo "  GitHub : https://github.com/${GITHUB_REPO}/releases/tag/$VERSION"
-fi
 if [ "$want_gitea" = 1 ]; then
   echo "  Gitea  : ${GITEA_URL%/}/${GITEA_OWNER}/${GITEA_REPO}/releases/tag/$VERSION"
+fi
+if [ "$want_github" = 1 ]; then
+  echo "  GitHub : https://github.com/${GITHUB_REPO}/releases/tag/$VERSION"
 fi
