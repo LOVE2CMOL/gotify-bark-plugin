@@ -3,8 +3,10 @@
 # 把当前仓库同步到 GitHub。
 #
 # 做法：先把仓库复制到临时目录，在副本里把**提交邮箱**统一改写成 GitHub 的
-# noreply 形式，再强推 main 与全部标签。本地仓库和其它远端（例如自建 Gitea）
-# 完全不受影响 —— 于是 Gitea 上保留原始邮箱，GitHub 上只有 noreply。
+# noreply 形式，再强推 main，并为远端尚未存在的标签补推标签（已存在的同名标签
+# 一律跳过，避免 GitHub 把该标签下的 Release 资源一并删掉）。
+# 本地仓库和其它远端（例如自建 Gitea）完全不受影响 —— 于是 Gitea 上保留原始
+# 邮箱，GitHub 上只有 noreply。
 #
 # 注意：提交邮箱是提交内容的一部分，所以两边改写后 commit hash 必然不同，
 # 这是预期行为，GitHub 只作为公开镜像使用即可。
@@ -49,10 +51,25 @@ rm -rf .git/refs/original
 git reflog expire --expire=now --all
 git gc --prune=now -q
 
-echo "==> 推送 main 与全部标签"
 REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
+echo "==> 推送 main"
 git push -q -f "$REMOTE" HEAD:refs/heads/main
-git push -q -f "$REMOTE" --tags
+
+# 标签：只推远端还没有的，**绝不**强推已存在的同名标签。
+# 原因：GitHub 的 Release 挂在 tag 对象上，一旦用别的对象覆盖同名 tag，
+# 该 Release 名下的全部资源会被一并删除（本项目历史上丢过 5 个 Release）。
+# 新版本用的都是新版本号，所以「只增不覆盖」不会影响正常发布。
+echo "==> 同步标签（只新增，不覆盖）"
+remote_tags="$(git ls-remote --tags --refs "$REMOTE" | awk '{print $2}' | sed 's#^refs/tags/##')"
+while read -r t; do
+  [ -n "$t" ] || continue
+  if printf '%s\n' "$remote_tags" | grep -qxF "$t"; then
+    echo "  跳过 $t（远端已存在，改动它会让同名 Release 的资源被删除）"
+  else
+    git push -q "$REMOTE" "refs/tags/$t"
+    echo "  新增 $t"
+  fi
+done < <(git tag)
 
 echo
 echo "同步完成：https://github.com/${GITHUB_REPO}"
