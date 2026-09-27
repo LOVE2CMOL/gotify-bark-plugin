@@ -29,10 +29,21 @@ import (
 )
 
 // Version is the plugin version reported to Gotify.
-const Version = "1.2.4"
+const Version = "1.2.5"
 
 // ModulePath identifies this plugin. Gotify refuses plugins with an empty path.
-const ModulePath = "https://github.com/love2cmol/gotify-bark-plugin"
+//
+// This must be a plain Go module path, never a URL: Gotify uses the string
+// verbatim as the plugin identity and stores it in plugin_confs.module_path.
+// A scheme prefix is wrong, and any change to the value makes Gotify treat the
+// build as a brand new plugin — new plugin id, new token, default config and a
+// disabled state, while the old row stays behind in the database.
+//
+// v1.0.0–v1.2.1 shipped "github.com/dsh/gotify-bark-plugin", v1.2.2–v1.2.4
+// shipped "https://github.com/love2cmol/gotify-bark-plugin". Both were wrong
+// for the same reason. This value is frozen; migrate with
+// scripts/migrate-modulepath.py instead of editing it again.
+const ModulePath = "github.com/love2cmol/gotify-bark-plugin"
 
 // GetGotifyPluginInfo returns gotify plugin info.
 func GetGotifyPluginInfo() plugin.Info {

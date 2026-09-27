@@ -1,4 +1,4 @@
-module github.com/dsh/gotify-bark-plugin
+module github.com/love2cmol/gotify-bark-plugin
 
 go 1.26.0
 

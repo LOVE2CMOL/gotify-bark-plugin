@@ -39,10 +39,10 @@ Gotify 本身没有「收到消息」的插件钩子，所以本插件换了个�
 
 ```bash
 # x86_64 服务器 / NAS / 云主机
-curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.4/bark-linux-amd64.so
+curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.5/bark-linux-amd64.so
 
 # ARM64（树莓派 4/5、甲骨文 ARM、Apple Silicon 上的 Linux 虚拟机）
-curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.4/bark-linux-arm64.so
+curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.5/bark-linux-arm64.so
 ```
 
 | 文件 | 适用平台 |
@@ -94,17 +94,24 @@ systemctl restart gotify
 
 保存后把 `enabled` 设为 `true`，页面状态变成「✅ 运行中」就成功了。
 
-### ⚠️ 从 v1.2.1 及更早版本升级（v1.2.2 起要重新配置一次）
+### ⚠️ 升级前必读：ModulePath 变过两次，v1.2.5 起冻结
 
-v1.2.2 把插件的 `ModulePath` 改成了 `https://github.com/love2cmol/gotify-bark-plugin`。
-Gotify 正是用这个字段识别插件的，所以换上新的 `.so` 并重启之后：
+Gotify 用插件里的 `ModulePath`（一个 Go module path 字符串）识别插件。这个值每变一次，
+Gotify 就当成**全新插件**处理：新建一条记录、发一个新 token、配置回到默认值、状态变成未启用；
+旧记录留在数据库里，既不会被复用，也不会被自动清理。
 
-1. Plugins 页面里会**多出一个全新的插件**（新的 id、新的 token），旧的那一条不再显示；
-2. 旧插件里的配置**不会继承**，需要在新插件页面重新填写一遍；
-3. 新插件默认是**未启用**状态 —— 填完配置后还要点一下 **Enable**，状态变成「✅ 运行中」才会开始转发。
+| 版本 | ModulePath |
+| --- | --- |
+| v1.0.0 – v1.2.1 | `github.com/dsh/gotify-bark-plugin` |
+| v1.2.2 – v1.2.4 | `https://github.com/love2cmol/gotify-bark-plugin`（多写了 scheme，是错的） |
+| **v1.2.5 起** | **`github.com/love2cmol/gotify-bark-plugin`** ← 已冻结，以后不再变动 |
 
-配置内容照抄原来的即可（`device_keys` / `server_url` / `client_token` 三项必填）。
-旧记录会留在数据库里，不再显示，也不影响使用。
+**所以从 v1.2.4 及更早版本升级到 v1.2.5，插件页会多出一条新记录，配置需要重填一遍**
+（`device_keys` / `server_url` / `client_token` 三项必填），填完点一下 **Enable** 就会开始转发。
+这是最后一次：v1.2.5 之后 ModulePath 已经冻结，不会再变。
+
+> 替换 `.so` 时务必**先删掉旧文件再放新的**。插件目录里同时存在两个 `ModulePath` 相同的
+> `.so` 时，Gotify 会报 `plugin with module path ... is present at least twice` 并**直接启动失败**。
 
 ---
 
@@ -531,7 +538,7 @@ docker build --build-arg GOARCH=arm64 -o build .
 
 ```bash
 ./scripts/build.sh all
-GITEA_TOKEN=xxx ./scripts/release.sh v1.2.4
+GITEA_TOKEN=xxx ./scripts/release.sh v1.2.5
 ```
 
 脚本会依次：算 sha256 → 打标签 → 推送 Gitea → 建 Release → 把两个 `.so` 作为附件挂上 →
@@ -540,7 +547,7 @@ GITEA_TOKEN=xxx ./scripts/release.sh v1.2.4
 **GitHub 是公开镜像，必须显式加 `--github` 才会触碰**：
 
 ```bash
-GITEA_TOKEN=xxx GITHUB_TOKEN=yyy ./scripts/release.sh --github v1.2.4
+GITEA_TOKEN=xxx GITHUB_TOKEN=yyy ./scripts/release.sh --github v1.2.5
 ```
 
 不带 `--github` 时脚本连一个 GitHub 请求都不会发出。
