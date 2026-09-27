@@ -39,10 +39,10 @@ Gotify 本身没有「收到消息」的插件钩子，所以本插件换了个�
 
 ```bash
 # x86_64 服务器 / NAS / 云主机
-curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.3/bark-linux-amd64.so
+curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.4/bark-linux-amd64.so
 
 # ARM64（树莓派 4/5、甲骨文 ARM、Apple Silicon 上的 Linux 虚拟机）
-curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.3/bark-linux-arm64.so
+curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.4/bark-linux-arm64.so
 ```
 
 | 文件 | 适用平台 |
@@ -531,7 +531,7 @@ docker build --build-arg GOARCH=arm64 -o build .
 
 ```bash
 ./scripts/build.sh all
-GITEA_TOKEN=xxx ./scripts/release.sh v1.2.3
+GITEA_TOKEN=xxx ./scripts/release.sh v1.2.4
 ```
 
 脚本会依次：算 sha256 → 打标签 → 推送 Gitea → 建 Release → 把两个 `.so` 作为附件挂上 →
@@ -540,7 +540,7 @@ GITEA_TOKEN=xxx ./scripts/release.sh v1.2.3
 **GitHub 是公开镜像，必须显式加 `--github` 才会触碰**：
 
 ```bash
-GITEA_TOKEN=xxx GITHUB_TOKEN=yyy ./scripts/release.sh --github v1.2.3
+GITEA_TOKEN=xxx GITHUB_TOKEN=yyy ./scripts/release.sh --github v1.2.4
 ```
 
 不带 `--github` 时脚本连一个 GitHub 请求都不会发出。
@@ -675,4 +675,4 @@ this program.  If not, see <https://www.gnu.org/licenses/>.
 | ❌ 不可以 | 把本插件或其衍生版本闭源分发 |
 | 🚫 担保 | 不提供任何担保，作者不承担责任（GPLv3 第 15、16 条） |
 
-**关于 Releases 里的 `.so`**：二进制属于 GPLv3 第 6 条意义上的目标代码，其对应源码（Corresponding Source）就是本仓库**同一个 tag** 的代码快照 —— 例如 v1.2.3 的二进制对应 <https://github.com/LOVE2CMOL/gotify-bark-plugin/tree/v1.2.3>。再分发二进制时请一并给出这个源码位置。
+**关于 Releases 里的 `.so`**：二进制属于 GPLv3 第 6 条意义上的目标代码，其对应源码（Corresponding Source）就是本仓库**同一个 tag** 的代码快照 —— 例如 v1.2.4 的二进制对应 <https://github.com/LOVE2CMOL/gotify-bark-plugin/tree/v1.2.4>。再分发二进制时请一并给出这个源码位置。
