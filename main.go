@@ -16,7 +16,7 @@ import (
 const Version = "1.2.1"
 
 // ModulePath identifies this plugin. Gotify refuses plugins with an empty path.
-const ModulePath = "github.com/dsh/gotify-bark-plugin"
+const ModulePath = "https://github.com/love2cmol/gotify-bark-plugin"
 
 // GetGotifyPluginInfo returns gotify plugin info.
 func GetGotifyPluginInfo() plugin.Info {
