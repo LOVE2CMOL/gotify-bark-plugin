@@ -33,30 +33,17 @@ Gotify 本身没有「收到消息」的插件钩子，所以本插件换了个�
 
 ### 1. 拿到插件文件
 
-**方式 A：从发布页面下载（推荐）**
+**方式 A：从 Releases 下载（推荐，无需登录）**
 
-打开 <https://gitea.example.com/dsh/gotify-bark-plugin/releases>，选最新版本，在页面底部的 **Assets** 里点对应架构下载即可（仓库是私有的，需要先登录 Gitea）。
-
-命令行下载（`<TOKEN>` 换成自己的 Gitea 访问令牌）：
+打开 <https://github.com/LOVE2CMOL/gotify-bark-plugin/releases>，选最新版本，在页面底部的 **Assets** 里下载对应架构的 `.so`：
 
 ```bash
 # x86_64 服务器 / NAS / 云主机
-curl -LO -H "Authorization: token <TOKEN>" \
-  https://gitea.example.com/dsh/gotify-bark-plugin/releases/download/v1.2.2/bark-linux-amd64.so
+curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.2/bark-linux-amd64.so
 
 # ARM64（树莓派 4/5、甲骨文 ARM、Apple Silicon 上的 Linux 虚拟机）
-curl -LO -H "Authorization: token <TOKEN>" \
-  https://gitea.example.com/dsh/gotify-bark-plugin/releases/download/v1.2.2/bark-linux-arm64.so
+curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.2/bark-linux-arm64.so
 ```
-
-**方式 B：从包管理页面下载（无需登录）**
-
-```bash
-curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.2.2/bark-linux-amd64.so
-curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.2.2/bark-linux-arm64.so
-```
-
-版本列表：<https://gitea.example.com/dsh/-/packages>
 
 | 文件 | 适用平台 |
 | --- | --- |
@@ -68,7 +55,7 @@ curl -LO https://gitea.example.com/dsh/-/packages/generic/gotify-bark-plugin/v1.
 **方式 B：自己编译**
 
 ```bash
-git clone https://gitea.example.com/dsh/gotify-bark-plugin.git
+git clone https://github.com/LOVE2CMOL/gotify-bark-plugin.git
 cd gotify-bark-plugin
 ./scripts/build.sh          # 产物输出到 build/ 目录
 ```
@@ -540,19 +527,26 @@ docker build --build-arg GOARCH=arm64 -o build .
 
 ### 发布新版本
 
-编译产物统一挂在 **Releases 发布页面**，一条命令搞定：
+编译产物挂在 **GitHub Releases**，一条命令搞定：
 
 ```bash
-./scripts/build.sh all                        # 先生成 build/bark-linux-*.so
-GITEA_TOKEN=xxx ./scripts/release.sh v1.2.2   # 打标签 + 建 Release + 上传附件
+./scripts/build.sh all                                  # 先生成 build/bark-linux-*.so
+GITHUB_TOKEN=xxx ./scripts/release.sh v1.2.3            # 打标签 + 建 Release + 上传附件
 ```
 
 脚本会计算 sha256、创建 Release、把两个 `.so` 作为附件挂到发布页面，并在结束时打印发布页地址。
 
+如果同时还维护了自建的 Gitea 镜像，再补上这三个变量即可**一次发两边**：
+
+```bash
+GITHUB_TOKEN=xxx \
+GITEA_URL=https://gitea.example.com GITEA_TOKEN=yyy GITEA_OWNER=yourname \
+./scripts/release.sh v1.2.3
+```
+
 > ⚠️ Gitea 的 Release 附件受 `[attachment] MAX_SIZE` 限制（默认 **4 MB**），而插件产物约 30 MB。
 > 需要服务端先调大：`app.ini` 里写 `[attachment] MAX_SIZE = 64`，Docker 部署可加环境变量
-> `GITEA__attachment__MAX_SIZE=64`，重启 Gitea 生效。未调大时上传会返回 413，
-> 脚本会直接提示，此时产物仍可从包管理页面下载。
+> `GITEA__attachment__MAX_SIZE=64`，重启 Gitea 生效。未调大时该平台的上传会返回 413，脚本会直接提示。
 
 ---
 
