@@ -527,21 +527,29 @@ docker build --build-arg GOARCH=arm64 -o build .
 
 ### 发布新版本
 
-编译产物挂在 **GitHub Releases**，一条命令搞定：
-
 ```bash
-./scripts/build.sh all                                  # 先生成 build/bark-linux-*.so
-GITHUB_TOKEN=xxx ./scripts/release.sh v1.2.3            # 打标签 + 建 Release + 上传附件
+./scripts/build.sh all                        # 先生成 build/bark-linux-*.so
+GITHUB_TOKEN=xxx ./scripts/release.sh v1.2.3  # 同步代码 + 打标签 + 建 Release + 传附件
 ```
 
-脚本会计算 sha256、创建 Release、把两个 `.so` 作为附件挂到发布页面，并在结束时打印发布页地址。
+`release.sh` 会计算 sha256、创建 Release、把两个 `.so` 作为附件挂到发布页面，结束时打印发布页地址。
 
-如果同时还维护了自建的 Gitea 镜像，再补上这三个变量即可**一次发两边**：
+**公开仓库里的提交邮箱会被自动脱敏**：脚本先把仓库复制到临时目录，用 `scripts/sync-github.sh`
+把提交邮箱统一改写成 `LOVE2CMOL@users.noreply.github.com`，再强推 main 与全部标签，
+所以 GitHub 上看不到真实邮箱（本地仓库与其它远端不受影响；两边 commit hash 因此不同，属预期）。
+
+如果同时还维护了自建 Gitea 镜像，补上三个变量即可**一次发两边**：
 
 ```bash
 GITHUB_TOKEN=xxx \
 GITEA_URL=https://gitea.example.com GITEA_TOKEN=yyy GITEA_OWNER=yourname \
 ./scripts/release.sh v1.2.3
+```
+
+只想同步代码、不发版：
+
+```bash
+GITHUB_TOKEN=xxx ./scripts/sync-github.sh
 ```
 
 > ⚠️ Gitea 的 Release 附件受 `[attachment] MAX_SIZE` 限制（默认 **4 MB**），而插件产物约 30 MB。
@@ -624,6 +632,7 @@ curl http://你的gotify/plugin/1/custom/<plugin-token>/bark
 | `bark_test.go` | 加密与请求路由的单元测试（含 Bark 官方示例密文的断言） |
 | `scripts/build.sh` | 构建脚本（含包指纹对齐逻辑） |
 | `scripts/release.sh` | 发布脚本：打标签、建 Release、把编译产物挂到发布页面 |
+| `scripts/sync-github.sh` | 把代码同步到 GitHub，同时在临时副本里把提交邮箱改写成 noreply |
 | `Dockerfile` | 用官方镜像构建 |
 | `build/*.so` | 编译产物（不纳入版本管理，由 `scripts/build.sh` 生成，或从 Releases 下载） |
 

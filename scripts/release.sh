@@ -78,8 +78,10 @@ push_to() {
   echo "    $label 已推送"
 }
 
+# GitHub 侧的代码与标签交给 sync-github.sh：它会在临时副本里把提交邮箱统一
+# 改写成 noreply 形式再推送，避免真实邮箱出现在公开仓库中。
 if [ "$want_github" = 1 ]; then
-  push_to "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git" GitHub
+  "$(dirname "$0")/sync-github.sh"
 fi
 if [ "$want_gitea" = 1 ]; then
   gitea_host="${GITEA_URL#https://}"
