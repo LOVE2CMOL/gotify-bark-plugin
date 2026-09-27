@@ -71,7 +71,7 @@ func (p *Plugin) renderDisplay(location *url.URL) string {
 	// --- notes -----------------------------------------------------------
 	b.WriteString("#### 说明\n\n")
 	b.WriteString("- 插件通过 Gotify 的 `/stream` WebSocket 订阅本用户的全部通知（包括其它应用推送的消息），再调用 Bark 的 `POST /push` 转发，因此**不需要修改 Gotify 本体**。\n")
-	b.WriteString("- 填写 `encrypt_key` 后改用 Bark 的端到端加密：请求变为 `POST /{device_key}`，正文经 AES-256 加密，**服务端无法读取内容**，只有你的 iPhone 能解密。密钥必须与 Bark App 里「加密」设置的一致（32 位）。\n")
+	b.WriteString("- 填写 `encrypt_key` 后改用 Bark 的端到端加密：请求变为 `POST /{device_key}`，正文经 AES 加密，**服务端无法读取内容**，只有你的 iPhone 能解密。密钥长度决定算法（16 位 = AES128，24 位 = AES192，32 位 = AES256），必须与 Bark App 里选的一致。\n")
 	b.WriteString("- 消息按到达顺序逐条转发；Bark 暂时不可用时会自动重试 3 次，失败只记录日志、不影响 Gotify 本身。\n")
 	b.WriteString("- `min_priority` 可按优先级过滤；`skip_title_prefix` 可过滤标题前缀（例如用它跳过自己发出的回环消息）。\n")
 	b.WriteString("- 想验证是否生效，可在 Gotify 里对任意应用点「发送测试消息」，或直接 `curl` 一次 push API。\n")
@@ -112,8 +112,9 @@ gotify_url: %q
 client_token: "gtfy..."
 
 # ══ 端到端加密（可选，Bark App 里开了「推送加密」才填）═══
-# App 端请选：算法 AES256 / 模式 CBC / Padding pkcs7（GCM 暂不支持）
-# 32 位密钥，必须与 App 里填的完全一致；留空 = 明文推送
+# App 端算法与密钥长度一一对应：16 位 = AES128，24 位 = AES192，32 位 = AES256
+# 模式请选 CBC（或 ECB），Padding 选 pkcs7；GCM 暂不支持
+# 密钥必须与 App 里填的完全一致；留空 = 明文推送
 encrypt_key: ""
 # cbc（默认，每条消息随机 IV）或 ecb，需与 App 里选的模式一致
 encrypt_mode: %q

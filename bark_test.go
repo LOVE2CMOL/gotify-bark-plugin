@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"encoding/base64"
 	"strings"
 	"testing"
@@ -248,5 +250,151 @@ func TestBuildBarkPushUsesApplicationNameForGroup(t *testing.T) {
 	fallback := &Config{GroupByApp: true, DefaultGroup: "gotify"}
 	if got := buildBarkPush(fallback, gotifyMessage{}, "k", applicationInfo{}, "").Group; got != "gotify" {
 		t.Errorf("default group fallback = %q, want %q", got, "gotify")
+	}
+}
+
+// TestEncryptBarkPayloadAES128MatchesBarkExample pins the AES-128 path to the
+// ciphertexts printed in Bark's own encryption documentation (the Chinese and
+// English pages use a different IV). Bark derives the AES variant from the key
+// length, so a 16-character key has to reproduce `openssl enc -aes-128-cbc`.
+func TestEncryptBarkPayloadAES128MatchesBarkExample(t *testing.T) {
+	const (
+		key       = "1234567890123456"
+		plaintext = `{"body": "test", "sound": "birdsong"}`
+	)
+	cases := []struct {
+		name string
+		iv   string
+		want string
+	}{
+		{
+			name: "chinese documentation example",
+			iv:   "1234567890123456",
+			want: "+aPt5cwN9GbTLLSFri60l3h1X00u/9j1FENfWiTxhNHVLGU+XoJ15JJG5W/d/yf0",
+		},
+		{
+			name: "english documentation example",
+			iv:   "1111111111111111",
+			want: "d3QhjQjP5majvNt5CjsvFWwqqj2gKl96RFj5OO+u6ynTt7lkyigDYNA3abnnCLpr",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, gotIV, err := encryptBarkPayload(key, encryptModeCBC, c.iv, []byte(plaintext))
+			if err != nil {
+				t.Fatalf("encryptBarkPayload: %v", err)
+			}
+			if got != c.want {
+				t.Errorf("ciphertext mismatch\n got: %s\nwant: %s", got, c.want)
+			}
+			if gotIV != c.iv {
+				t.Errorf("iv mismatch: got %q want %q", gotIV, c.iv)
+			}
+		})
+	}
+}
+
+// TestEncryptBarkPayloadRoundTripsEveryKeyLength covers AES-128, AES-192 and
+// AES-256, which is exactly how the Bark app selects the algorithm: by key
+// length. AES-192 has no published sample, so it is verified by decryption.
+func TestEncryptBarkPayloadRoundTripsEveryKeyLength(t *testing.T) {
+	plaintext := []byte(`{"body":"中文、emoji 🐋 和符号 +/ 都要原样还原"}`)
+	keys := []struct {
+		name string
+		key  string
+	}{
+		{"AES-128", "1234567890123456"},
+		{"AES-192", "123456789012345678901234"},
+		{"AES-256", "jfhgujcjd12456ghgfhyrg123085sfzb"},
+	}
+	for _, c := range keys {
+		t.Run(c.name, func(t *testing.T) {
+			ciphertext, iv, err := encryptBarkPayload(c.key, encryptModeCBC, "", plaintext)
+			if err != nil {
+				t.Fatalf("encryptBarkPayload: %v", err)
+			}
+			raw, err := base64.StdEncoding.DecodeString(ciphertext)
+			if err != nil {
+				t.Fatalf("decode ciphertext: %v", err)
+			}
+			block, err := aes.NewCipher([]byte(c.key))
+			if err != nil {
+				t.Fatalf("aes.NewCipher: %v", err)
+			}
+			if len(raw)%block.BlockSize() != 0 {
+				t.Fatalf("ciphertext length %d is not a multiple of the block size", len(raw))
+			}
+			plain := make([]byte, len(raw))
+			cipher.NewCBCDecrypter(block, []byte(iv)).CryptBlocks(plain, raw)
+			plain = pkcs7Unpad(t, plain)
+			if string(plain) != string(plaintext) {
+				t.Errorf("round-trip mismatch\n got: %q\nwant: %q", plain, plaintext)
+			}
+		})
+	}
+}
+
+func pkcs7Unpad(t *testing.T, data []byte) []byte {
+	t.Helper()
+	if len(data) == 0 {
+		t.Fatal("plaintext is empty")
+	}
+	n := int(data[len(data)-1])
+	if n == 0 || n > len(data) {
+		t.Fatalf("invalid PKCS#7 padding length %d", n)
+	}
+	return data[:len(data)-n]
+}
+
+// TestNormalizeConfigInfersServerScheme covers the "forgot the scheme" case:
+// container names and LAN addresses get http, public names get https.
+func TestNormalizeConfigInfersServerScheme(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"bark:8080", "http://bark:8080"},
+		{"bark", "http://bark"},
+		{"localhost:8080", "http://localhost:8080"},
+		{"127.0.0.1:8080", "http://127.0.0.1:8080"},
+		{"192.168.1.10:8080", "http://192.168.1.10:8080"},
+		{"10.0.0.5", "http://10.0.0.5"},
+		{"172.16.3.4:8080", "http://172.16.3.4:8080"},
+		{"bark.example.com:4430", "https://bark.example.com:4430"},
+		{"api.day.app", "https://api.day.app"},
+		{"8.8.8.8", "https://8.8.8.8"},
+		{"http://bark:8080", "http://bark:8080"},
+		{"https://api.day.app/", "https://api.day.app"},
+	}
+	for _, c := range cases {
+		got, err := normalizeConfig(&Config{ServerURL: c.in, ClientToken: "gtfyc.x", DeviceKeys: "key1"})
+		if err != nil {
+			t.Fatalf("normalizeConfig(%q): %v", c.in, err)
+		}
+		if got.ServerURL != c.want {
+			t.Errorf("server_url %q normalized to %q, want %q", c.in, got.ServerURL, c.want)
+		}
+	}
+}
+
+// TestNormalizeConfigAcceptsEveryAESKeyLength checks the three key sizes the
+// Bark app offers; any other length would make aes.NewCipher fail at push time.
+func TestNormalizeConfigAcceptsEveryAESKeyLength(t *testing.T) {
+	accepted := []string{
+		"1234567890123456",                 // 16 -> AES128
+		"123456789012345678901234",         // 24 -> AES192
+		"jfhgujcjd12456ghgfhyrg123085sfzb", // 32 -> AES256
+	}
+	for _, key := range accepted {
+		if _, err := normalizeConfig(&Config{ServerURL: "https://api.day.app", ClientToken: "gtfyc.x", DeviceKeys: "key1", EncryptKey: key}); err != nil {
+			t.Errorf("encrypt_key with %d characters rejected: %v", len(key), err)
+		}
+	}
+
+	rejected := []string{"short", "12345678901234567890", strings.Repeat("x", 33)}
+	for _, key := range rejected {
+		if _, err := normalizeConfig(&Config{ServerURL: "https://api.day.app", ClientToken: "gtfyc.x", DeviceKeys: "key1", EncryptKey: key}); err == nil {
+			t.Errorf("encrypt_key with %d characters should have been rejected", len(key))
+		}
 	}
 }

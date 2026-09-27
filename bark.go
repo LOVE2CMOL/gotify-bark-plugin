@@ -17,15 +17,19 @@ import (
 	"time"
 )
 
-// Bark end-to-end encryption parameters. The key must be 32 characters
-// (AES-256) and the IV 16 characters, exactly as configured in the Bark app.
-// See https://bark.day.app/#/encryption
+// Bark end-to-end encryption parameters. The key length selects the AES
+// variant and must match the algorithm chosen in the Bark app; the IV is
+// always 16 characters. See https://bark.day.app/#/encryption
 const (
-	encryptKeyLen  = 32
 	encryptIVLen   = 16
 	encryptModeCBC = "cbc"
 	encryptModeECB = "ecb"
 )
+
+// encryptKeyLens maps every accepted encrypt_key length to the algorithm name
+// the Bark app shows in its encryption settings (AES128 / AES192 / AES256).
+// Go's aes.NewCipher derives the variant from the key length by itself.
+var encryptKeyLens = map[int]string{16: "AES128", 24: "AES192", 32: "AES256"}
 
 // encryptModes lists the accepted encrypt_mode values.
 var encryptModes = map[string]bool{encryptModeCBC: true, encryptModeECB: true}
@@ -204,10 +208,12 @@ func buildBarkRequest(cfg *Config, deviceKey string, push barkPush) (*barkReques
 	}, nil
 }
 
-// encryptBarkPayload seals plaintext with AES-256 in the configured mode and
+// encryptBarkPayload seals plaintext with AES in the configured mode and
 // returns the base64 ciphertext together with the IV to transmit ("" for ECB).
+// The AES variant follows the key length — 16 bytes is AES-128, 24 is AES-192
+// and 32 is AES-256 — matching whichever algorithm was picked in the Bark app.
 //
-// Bark takes the key and the IV as raw 16/32 characters. Its shell example
+// Bark takes the key and the IV as raw characters. Its shell example
 // hex-encodes them only because `openssl enc -K/-iv` demands hex input, so the
 // IV that travels on the wire is the plain 16-character string.
 func encryptBarkPayload(key, mode, fixedIV string, plaintext []byte) (string, string, error) {
