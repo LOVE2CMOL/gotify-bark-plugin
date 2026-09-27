@@ -39,10 +39,10 @@ Gotify 本身没有「收到消息」的插件钩子，所以本插件换了个�
 
 ```bash
 # x86_64 服务器 / NAS / 云主机
-curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.2/bark-linux-amd64.so
+curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.3/bark-linux-amd64.so
 
 # ARM64（树莓派 4/5、甲骨文 ARM、Apple Silicon 上的 Linux 虚拟机）
-curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.2/bark-linux-arm64.so
+curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.3/bark-linux-arm64.so
 ```
 
 | 文件 | 适用平台 |

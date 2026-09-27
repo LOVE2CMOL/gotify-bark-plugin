@@ -21,6 +21,7 @@
 #   GITHUB_TOKEN   仅在使用 --github 时必填（Contents: Read and write）
 #   GITHUB_REPO    可选，默认 LOVE2CMOL/gotify-bark-plugin
 #   PUBLISH_GITHUB 置 1 等价于传 --github
+#   NOTES_FILE     可选，Release 说明的 markdown 文件；缺省只生成下载清单与校验和
 #
 # ── 关于附件大小 ─────────────────────────────────────────────────────────────
 # Gitea 的 Release 附件受 [attachment] MAX_SIZE 限制（默认只有 4 MB），而插件
@@ -161,6 +162,12 @@ JSON_FILE="$(mktemp)"
 trap 'rm -f "$BODY_FILE" "$JSON_FILE"' EXIT
 
 {
+  if [ -n "${NOTES_FILE:-}" ] && [ -f "$NOTES_FILE" ]; then
+    cat "$NOTES_FILE"
+    echo
+    echo "---"
+    echo
+  fi
   echo "## 下载"
   echo
   echo "见本页下方 **Assets**：\`bark-linux-amd64.so\`（x86_64）与 \`bark-linux-arm64.so\`（ARM64）。"
