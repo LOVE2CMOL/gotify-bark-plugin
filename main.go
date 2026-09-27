@@ -1,3 +1,19 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 DSH
+//
+// This program is free software: you can redistribute it and/or modify it under
+// the terms of the GNU General Public License as published by the Free Software
+// Foundation, either version 3 of the License, or (at your option) any later
+// version.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along with
+// this program.  If not, see <https://www.gnu.org/licenses/>.
+
 // Command gotify-bark-plugin is a Gotify plugin that mirrors every notification
 // arriving at a Gotify server to one or more Bark (iOS) devices.
 //
@@ -26,7 +42,7 @@ func GetGotifyPluginInfo() plugin.Info {
 		Name:        "Bark Forwarder",
 		Website:     "https://github.com/Finb/Bark",
 		Description: "把 Gotify 收到的每条通知实时镜像推送到 Bark（iOS），支持自建 bark-server、端到端加密、优先级过滤、铃声/分组/图标等完整 Bark 参数。",
-		License:     "MIT",
+		License:     "GPL-3.0-or-later",
 		ModulePath:  ModulePath,
 	}
 }
