@@ -29,7 +29,7 @@ import (
 )
 
 // Version is the plugin version reported to Gotify.
-const Version = "1.2.5"
+const Version = "1.2.6"
 
 // ModulePath identifies this plugin. Gotify refuses plugins with an empty path.
 //
@@ -41,8 +41,8 @@ const Version = "1.2.5"
 //
 // v1.0.0–v1.2.1 shipped "github.com/dsh/gotify-bark-plugin", v1.2.2–v1.2.4
 // shipped "https://github.com/love2cmol/gotify-bark-plugin". Both were wrong
-// for the same reason. This value is frozen; migrate with
-// scripts/migrate-modulepath.py instead of editing it again.
+// for the same reason. As of v1.2.5 the value is frozen: editing it again would
+// orphan every installed plugin_confs row, so don't.
 const ModulePath = "github.com/love2cmol/gotify-bark-plugin"
 
 // GetGotifyPluginInfo returns gotify plugin info.

@@ -12,10 +12,14 @@
 #     plugin was built with a different version of package github.com/gorilla/websocket
 #
 # 解决办法：用 -gcflags 把本机的临时路径重写成官方路径，使导出数据完全一致：
-#   * 所有包    ：$GOMODCACHE  =>  /go/pkg/mod
-#   * runtime/cgo：它是 GOROOT 内的包，编译器本来就隐藏 GOROOT 真实路径，
-#                  额外加 -trimpath 反而会破坏它，所以单独用空参数覆盖掉。
-# 另外不要使用 -trimpath：它会让 runtime/cgo 的导出数据再次变化。
+#   * 所有包      ：$GOMODCACHE  =>  /go/pkg/mod
+#   * 标准库（std）：**不加任何参数**（用 `std=` 撤销 all= 的影响）。GOROOT 内的包
+#                    （std、internal/goarch 等）官方编译时走的是默认参数，只要多一个
+#                    -trimpath 标志，包指纹就会变，加载时报：
+#                        plugin was built with a different version of package internal/goarch
+#                    注意 `all=` 是包含标准库的，所以必须再用更具体的 `std=` 覆盖回来。
+#   * runtime/cgo ：同样属于标准库且最敏感，单独再空覆盖一次。
+# 另外不要使用全局 -trimpath：它会让标准库的导出数据再次变化。
 #
 # 注意：这样构建出来的 .so **只兼容官方发布版二进制**。如果你用的是自己从源码
 # 编译的 gotify，请设置 MATCH_LOCAL=1（不做路径重写），并用同一套 Go 工具链、
@@ -60,6 +64,7 @@ else
   echo "==> 对齐官方发布版：GOMODCACHE $REAL_GOMODCACHE => $OFFICIAL_GOMODCACHE"
   GCFLAGS=(
     -gcflags="all=-trimpath=$REAL_GOMODCACHE=>$OFFICIAL_GOMODCACHE"
+    -gcflags="std="
     -gcflags="runtime/cgo="
   )
 fi

@@ -39,10 +39,10 @@ Gotify 本身没有「收到消息」的插件钩子，所以本插件换了个�
 
 ```bash
 # x86_64 服务器 / NAS / 云主机
-curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.5/bark-linux-amd64.so
+curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.6/bark-linux-amd64.so
 
 # ARM64（树莓派 4/5、甲骨文 ARM、Apple Silicon 上的 Linux 虚拟机）
-curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.5/bark-linux-arm64.so
+curl -LO https://github.com/LOVE2CMOL/gotify-bark-plugin/releases/download/v1.2.6/bark-linux-arm64.so
 ```
 
 | 文件 | 适用平台 |
@@ -538,7 +538,7 @@ docker build --build-arg GOARCH=arm64 -o build .
 
 ```bash
 ./scripts/build.sh all
-GITEA_TOKEN=xxx ./scripts/release.sh v1.2.5
+GITEA_TOKEN=xxx ./scripts/release.sh v1.2.6
 ```
 
 脚本会依次：算 sha256 → 打标签 → 推送 Gitea → 建 Release → 把两个 `.so` 作为附件挂上 →
@@ -547,7 +547,7 @@ GITEA_TOKEN=xxx ./scripts/release.sh v1.2.5
 **GitHub 是公开镜像，必须显式加 `--github` 才会触碰**：
 
 ```bash
-GITEA_TOKEN=xxx GITHUB_TOKEN=yyy ./scripts/release.sh --github v1.2.5
+GITEA_TOKEN=xxx GITHUB_TOKEN=yyy ./scripts/release.sh --github v1.2.6
 ```
 
 不带 `--github` 时脚本连一个 GitHub 请求都不会发出。
@@ -583,7 +583,7 @@ curl http://你的gotify/plugin/1/custom/<plugin-token>/bark
 ```json
 {"devices":2,"enabled":true,"gotify_url":"http://127.0.0.1:18080",
  "plugin":"gotify-bark-plugin","running":true,"server_url":"http://127.0.0.1:18081",
- "version":"1.0.0"}
+ "version":"1.2.6"}
 ```
 
 `running: true` 表示 WebSocket 已连上、转发线程在跑。
@@ -599,6 +599,8 @@ curl http://你的gotify/plugin/1/custom/<plugin-token>/bark
 | 日志 `gotify rejected the token (HTTP 401/403)` | 客户端令牌无效或已被删除，重建一个 |
 | 日志 `gotify stream endpoint not found (HTTP 404)` | `gotify_url` 写错，或反向代理没把 `/stream` 转发过去 |
 | 日志 `push to device ... connection refused` | bark-server 没启动 / 地址或端口不对 |
+| 启动时日志出现 `[bark] gotify stream disconnected: ... connection refused`，紧接着又有 `[bark] connected to gotify stream` | **正常现象，不用管**。Gotify 先加载插件、之后才启动自己的 HTTP 监听，插件第一次订阅读必然被拒一次；内置退避重连会在 2 秒内接上。每次重启 Gotify 都会看到这行 |
+| 上面那条 `connection refused` 反复刷、始终等不到 `connected to gotify stream` | 那才是真的 `gotify_url` 不对（容器内不可达，或反向代理没转发 `/stream`） |
 | bark-server 返回 `failed to get device token` | Bark App 还没在这个服务端注册过：在 App 里切换服务器地址后重开一次 |
 | 改了配置没生效 | 保存后确认 `enabled: true`；配置变更会自动重启订阅，无需重启 Gotify |
 | `plugin is disabled` | 插件被停用了，在 Plugins 页面点 Enable |
